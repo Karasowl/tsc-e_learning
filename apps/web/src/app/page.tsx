@@ -487,7 +487,7 @@ export default function Home() {
     return (
       <main className="login-screen">
         <section className="login-copy">
-          <div className="brand-mark">TSC</div>
+          <img className="brand-logo" src="/tsc-logo.png" alt="TSC Private Security Consulting" />
           <h1>Capacitación TSC</h1>
           <p>Acceso operativo a cursos, evaluaciones, diplomas y reportes de colaboradores.</p>
           <dl>
@@ -531,10 +531,10 @@ export default function Home() {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span>TSC</span>
+          <img className="sidebar-logo" src="/tsc-shield-light.png" alt="TSC" />
           <div>
             <strong>Capacita</strong>
-            <small>LMS propio</small>
+            <small>Seguridad Privada</small>
           </div>
         </div>
         <nav className="nav-stack" aria-label="Secciones">

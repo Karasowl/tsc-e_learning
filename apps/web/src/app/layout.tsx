@@ -3,7 +3,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "TSC Capacita LMS",
-  description: "Plataforma propia de capacitacion TSC"
+  description: "Plataforma propia de capacitacion TSC",
+  icons: {
+    icon: "/favicon.png"
+  }
 };
 
 export default function RootLayout({

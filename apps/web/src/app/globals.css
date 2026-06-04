@@ -1,14 +1,18 @@
 :root {
   color-scheme: light;
-  --bg: #f3f5f7;
+  --bg: #eef1f6;
   --surface: #ffffff;
-  --surface-2: #f8fafc;
-  --text: #17202a;
-  --muted: #64748b;
-  --line: #d9e1ea;
-  --line-strong: #b8c3cf;
-  --brand: #b01016;
-  --brand-2: #262626;
+  --surface-2: #f5f7fb;
+  --text: #131a2e;
+  --muted: #5d6b82;
+  --line: #dbe2ec;
+  --line-strong: #b7c2d2;
+  /* TSC brand: deep navy primary + maroon accent (from the corporate logo) */
+  --navy: #131a33;
+  --navy-2: #1d274a;
+  --brand: #8c1713;
+  --brand-strong: #a51b15;
+  --brand-2: #1d274a;
   --ok: #16803a;
   --warn: #b7791f;
   --bad: #b42318;
@@ -59,16 +63,18 @@ button:disabled {
   max-width: 760px;
 }
 
-.brand-mark,
-.sidebar-brand span {
-  display: grid;
-  width: 52px;
-  height: 52px;
-  place-items: center;
-  background: var(--brand);
-  color: #fff;
-  font-weight: 800;
-  letter-spacing: 0;
+.brand-logo {
+  display: block;
+  width: auto;
+  height: 124px;
+  margin: 0 0 6px -4px;
+}
+
+.sidebar-logo {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  flex: 0 0 auto;
 }
 
 .login-copy h1 {
@@ -214,6 +220,10 @@ button:focus-visible {
   color: white;
 }
 
+.primary-button:hover:not(:disabled) {
+  background: var(--brand-strong);
+}
+
 .secondary-button {
   background: #fff;
   border-color: var(--line-strong);
@@ -272,8 +282,8 @@ button:focus-visible {
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100vh;
-  border-right: 1px solid var(--line);
-  background: #101418;
+  border-right: 1px solid var(--navy);
+  background: linear-gradient(180deg, #182146 0%, var(--navy) 60%);
   padding: 18px;
   color: white;
 }
@@ -284,11 +294,6 @@ button:focus-visible {
   align-items: center;
   padding-bottom: 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.sidebar-brand span {
-  width: 44px;
-  height: 44px;
 }
 
 .sidebar-brand strong,
@@ -314,10 +319,19 @@ button:focus-visible {
   color: #cbd5e1;
 }
 
-.nav-button.active,
 .nav-button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
+}
+
+.nav-button.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  box-shadow: inset 3px 0 0 #c8352c;
+}
+
+.nav-button.active svg {
+  color: #e8a39c;
 }
 
 .sidebar-logout {
