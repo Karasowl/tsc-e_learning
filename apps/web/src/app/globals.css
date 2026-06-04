@@ -715,6 +715,12 @@ tr:last-child td {
   color: var(--brand);
 }
 
+.tile-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
 .certificate-tile div {
   min-width: 0;
   flex: 1;

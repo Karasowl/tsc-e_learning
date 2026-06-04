@@ -81,6 +81,12 @@ All course, quiz, progress, and report routes require `Authorization: Bearer <to
   - Uses `CERTIFICATE_BACKGROUND_URL` when configured. This should point to the migrated `diploma-fondo-v4.jpg`, whose signatures are embedded in the image.
   - Locally smoke-tested against imported certificates.
 
+- `GET /certificates/:certificateId/pdf`
+  - Returns a real, downloadable PDF generated server-side with `pdf-lib` (no headless browser, so it stays portable to any VPS and serverless).
+  - Same access control as the HTML route.
+  - Embeds the bundled `apps/api/assets/diploma-fondo-v4.jpg` background (cover-fit) and draws the title, student name (cursive Great Vibes font, OFL, bundled), legend, and folio/verification/date at the WordPress diploma positions. Long names/titles auto-shrink to fit.
+  - Background path is overridable with `CERTIFICATE_BACKGROUND_PATH`.
+
 - `GET /certificates/verify/:verificationCode`
   - Public certificate verification endpoint.
 
@@ -123,6 +129,5 @@ All course, quiz, progress, and report routes require `Authorization: Bearer <to
 
 ## Still Pending
 
-- Server-side PDF file generation for certificates. Current route produces printable/downloadable HTML and browser print-to-PDF.
 - Automatic background worker scheduling for notification processing. Manual admin processing exists.
 - Full frontend screens for the operational LMS.

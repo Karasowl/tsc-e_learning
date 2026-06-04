@@ -7,8 +7,10 @@ import {
   certificateFolio,
   certificateStorageKey,
   certificateVerificationCode,
-  renderCertificateHtml
+  renderCertificateHtml,
+  type CertificateView
 } from "../lib/certificates.js";
+import { renderCertificatePdf } from "../lib/certificate-pdf.js";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
 
 const issueCertificateSchema = z.object({
@@ -156,17 +158,43 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
       return reply.code(403).send({ error: "Certificate access denied" });
     }
 
-    const certificateView = {
-      id: certificate.id,
-      folio: certificate.folio,
-      verificationCode: certificate.verificationCode,
-      issuedAt: certificate.issuedAt,
-      studentName: certificate.user.displayName,
-      courseTitle: certificate.course.title,
-      ...(config.certificateBackgroundUrl ? { backgroundUrl: config.certificateBackgroundUrl } : {})
-    };
+    return reply
+      .header("content-type", "text/html; charset=utf-8")
+      .send(renderCertificateHtml(buildCertificateView(certificate, config)));
+  });
 
-    return reply.header("content-type", "text/html; charset=utf-8").send(renderCertificateHtml(certificateView));
+  server.get("/certificates/:certificateId/pdf", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+
+    const parsed = certificateRefSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    const certificate = await getPrisma().certificate.findUnique({
+      where: { id: parsed.data.certificateId },
+      include: { user: true, course: true }
+    });
+
+    if (!certificate) {
+      return reply.code(404).send({ error: "Certificate not found" });
+    }
+
+    if (!canReadCertificate(auth, certificate.userId, certificate.course.teacherId)) {
+      return reply.code(403).send({ error: "Certificate access denied" });
+    }
+
+    const pdf = await renderCertificatePdf(buildCertificateView(certificate, config), {
+      backgroundPath: config.certificateBackgroundPath
+    });
+
+    return reply
+      .header("content-type", "application/pdf")
+      .header("content-disposition", `attachment; filename="diploma-${certificate.folio}.pdf"`)
+      .send(Buffer.from(pdf));
   });
 
   server.get("/certificates/verify/:verificationCode", async (request, reply) => {
@@ -197,6 +225,28 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
       }
     };
   });
+}
+
+function buildCertificateView(
+  certificate: {
+    id: string;
+    folio: string;
+    verificationCode: string;
+    issuedAt: Date;
+    user: { displayName: string };
+    course: { title: string };
+  },
+  config: AppConfig
+): CertificateView {
+  return {
+    id: certificate.id,
+    folio: certificate.folio,
+    verificationCode: certificate.verificationCode,
+    issuedAt: certificate.issuedAt,
+    studentName: certificate.user.displayName,
+    courseTitle: certificate.course.title,
+    ...(config.certificateBackgroundUrl ? { backgroundUrl: config.certificateBackgroundUrl } : {})
+  };
 }
 
 function certificateAccessWhere(auth: AuthContext): Prisma.CertificateWhereInput {

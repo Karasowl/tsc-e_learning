@@ -24,6 +24,7 @@ COPY --from=build /app/packages/db/package.json ./packages/db/package.json
 COPY --from=build /app/packages/wp-compat/dist ./packages/wp-compat/dist
 COPY --from=build /app/packages/wp-compat/package.json ./packages/wp-compat/package.json
 COPY --from=build /app/apps/api/dist ./apps/api/dist
+COPY --from=build /app/apps/api/assets ./apps/api/assets
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
 WORKDIR /app/apps/api
 EXPOSE 4000

@@ -432,6 +432,24 @@ export default function Home() {
     }
   }
 
+  async function downloadCertificatePdf(certificateId: string, folio: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_URL}/certificates/${certificateId}/pdf`, {
+        headers: token ? { authorization: `Bearer ${token}` } : {}
+      });
+      if (!response.ok) {
+        throw new Error("No se pudo generar el PDF del diploma");
+      }
+      downloadBlob(await response.blob(), `diploma-${folio}.pdf`);
+    } catch (pdfError) {
+      setError(errorMessage(pdfError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function exportReportExcel() {
     setBusy(true);
     setError(null);
@@ -775,9 +793,14 @@ export default function Home() {
                     <span>{certificate.folio}</span>
                     <small>{new Date(certificate.issuedAt).toLocaleDateString("es-MX")}</small>
                   </div>
-                  <button className="icon-button" onClick={() => openCertificate(certificate.id)} title="Abrir diploma" type="button">
-                    <Download aria-hidden />
-                  </button>
+                  <div className="tile-actions">
+                    <button className="icon-button" disabled={busy} onClick={() => openCertificate(certificate.id)} title="Ver diploma" type="button">
+                      <FileText aria-hidden />
+                    </button>
+                    <button className="icon-button" disabled={busy} onClick={() => downloadCertificatePdf(certificate.id, certificate.folio)} title="Descargar PDF" type="button">
+                      <Download aria-hidden />
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>

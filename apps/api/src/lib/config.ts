@@ -14,7 +14,8 @@ const configSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   SMTP_FROM: z.string().default("TSC Capacita <capacitacion@tscseguridadprivada.com.mx>"),
-  CERTIFICATE_BACKGROUND_URL: z.string().optional()
+  CERTIFICATE_BACKGROUND_URL: z.string().optional(),
+  CERTIFICATE_BACKGROUND_PATH: z.string().optional()
 });
 
 export type AppConfig = {
@@ -34,6 +35,7 @@ export type AppConfig = {
     from: string;
   };
   certificateBackgroundUrl: string | undefined;
+  certificateBackgroundPath: string | undefined;
 };
 
 export function readConfig(env = process.env): AppConfig {
@@ -55,6 +57,7 @@ export function readConfig(env = process.env): AppConfig {
       password: parsed.SMTP_PASSWORD,
       from: parsed.SMTP_FROM
     },
-    certificateBackgroundUrl: parsed.CERTIFICATE_BACKGROUND_URL
+    certificateBackgroundUrl: parsed.CERTIFICATE_BACKGROUND_URL,
+    certificateBackgroundPath: parsed.CERTIFICATE_BACKGROUND_PATH
   };
 }
