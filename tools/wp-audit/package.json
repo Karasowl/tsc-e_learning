@@ -1,0 +1,16 @@
+{
+  "name": "@tsc-capacita/wp-audit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dump": "tsx src/audit-dump.ts",
+    "export-users": "tsx src/export-users.ts",
+    "export-catalog": "tsx src/export-catalog.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.20.6"
+  }
+}

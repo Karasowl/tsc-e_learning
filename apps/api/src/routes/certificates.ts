@@ -1,0 +1,281 @@
+import { getPrisma } from "@tsc-capacita/db";
+import type { Prisma } from "@prisma/client";
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import type { AppConfig } from "../lib/config.js";
+import {
+  certificateFolio,
+  certificateStorageKey,
+  certificateVerificationCode,
+  renderCertificateHtml
+} from "../lib/certificates.js";
+import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
+
+const issueCertificateSchema = z.object({
+  courseId: z.string().min(1)
+});
+
+const certificateRefSchema = z.object({
+  certificateId: z.string().min(1)
+});
+
+const verificationSchema = z.object({
+  verificationCode: z.string().min(1)
+});
+
+export async function registerCertificateRoutes(server: FastifyInstance, config: AppConfig) {
+  server.get("/certificates", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+
+    const certificates = await getPrisma().certificate.findMany({
+      where: certificateAccessWhere(auth),
+      include: {
+        user: {
+          select: { id: true, displayName: true, email: true }
+        },
+        course: {
+          select: { id: true, title: true, slug: true, teacherId: true }
+        }
+      },
+      orderBy: { issuedAt: "desc" }
+    });
+
+    return {
+      certificates: certificates.map(serializeCertificate)
+    };
+  });
+
+  server.post("/certificates/issue", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+
+    const parsed = issueCertificateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    const course = await getPrisma().course.findUnique({
+      where: { id: parsed.data.courseId },
+      include: {
+        enrollments: {
+          where: { userId: auth.userId },
+          take: 1
+        },
+        certificates: {
+          where: { userId: auth.userId },
+          take: 1
+        },
+        templateLinks: {
+          include: { template: true },
+          take: 1
+        }
+      }
+    });
+
+    if (!course) {
+      return reply.code(404).send({ error: "Course not found" });
+    }
+
+    const isOwnerTeacher = auth.roles.includes("TEACHER") && course.teacherId === auth.userId;
+    const enrollment = course.enrollments[0] ?? null;
+    if (!isAdmin(auth) && !isOwnerTeacher && enrollment?.status !== "COMPLETED") {
+      return reply.code(403).send({ error: "Course completion is required before issuing a certificate" });
+    }
+
+    const existing = course.certificates[0];
+    if (existing) {
+      return {
+        certificate: serializeCertificate(
+          await getPrisma().certificate.findUniqueOrThrow({
+            where: { id: existing.id },
+            include: {
+              user: { select: { id: true, displayName: true, email: true } },
+              course: { select: { id: true, title: true, slug: true, teacherId: true } }
+            }
+          })
+        )
+      };
+    }
+
+    const issuedAt = new Date();
+    const folio = certificateFolio(auth.userId, course.id, issuedAt);
+    const verificationCode = certificateVerificationCode(auth.userId, course.id, issuedAt);
+    const certificate = await getPrisma().certificate.create({
+      data: {
+        userId: auth.userId,
+        courseId: course.id,
+        templateId: course.templateLinks[0]?.templateId ?? null,
+        status: "ISSUED",
+        folio,
+        verificationCode,
+        pdfStorageKey: certificateStorageKey(folio),
+        issuedAt
+      },
+      include: {
+        user: { select: { id: true, displayName: true, email: true } },
+        course: { select: { id: true, title: true, slug: true, teacherId: true } }
+      }
+    });
+
+    await logCertificateIssued(certificate);
+
+    return reply.code(201).send({
+      certificate: serializeCertificate(certificate)
+    });
+  });
+
+  server.get("/certificates/:certificateId/html", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+
+    const parsed = certificateRefSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    const certificate = await getPrisma().certificate.findUnique({
+      where: { id: parsed.data.certificateId },
+      include: {
+        user: true,
+        course: true
+      }
+    });
+
+    if (!certificate) {
+      return reply.code(404).send({ error: "Certificate not found" });
+    }
+
+    if (!canReadCertificate(auth, certificate.userId, certificate.course.teacherId)) {
+      return reply.code(403).send({ error: "Certificate access denied" });
+    }
+
+    const certificateView = {
+      id: certificate.id,
+      folio: certificate.folio,
+      verificationCode: certificate.verificationCode,
+      issuedAt: certificate.issuedAt,
+      studentName: certificate.user.displayName,
+      courseTitle: certificate.course.title,
+      ...(config.certificateBackgroundUrl ? { backgroundUrl: config.certificateBackgroundUrl } : {})
+    };
+
+    return reply.header("content-type", "text/html; charset=utf-8").send(renderCertificateHtml(certificateView));
+  });
+
+  server.get("/certificates/verify/:verificationCode", async (request, reply) => {
+    const parsed = verificationSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    const certificate = await getPrisma().certificate.findUnique({
+      where: { verificationCode: parsed.data.verificationCode },
+      include: {
+        user: { select: { displayName: true } },
+        course: { select: { title: true } }
+      }
+    });
+
+    if (!certificate || certificate.status !== "ISSUED") {
+      return reply.code(404).send({ valid: false });
+    }
+
+    return {
+      valid: true,
+      certificate: {
+        folio: certificate.folio,
+        issuedAt: certificate.issuedAt,
+        studentName: certificate.user.displayName,
+        courseTitle: certificate.course.title
+      }
+    };
+  });
+}
+
+function certificateAccessWhere(auth: AuthContext): Prisma.CertificateWhereInput {
+  if (isAdmin(auth)) {
+    return {};
+  }
+
+  if (auth.roles.includes("TEACHER")) {
+    return {
+      OR: [{ userId: auth.userId }, { course: { teacherId: auth.userId } }]
+    };
+  }
+
+  return { userId: auth.userId };
+}
+
+function canReadCertificate(auth: AuthContext, userId: string, teacherId: string | null) {
+  return isAdmin(auth) || auth.userId === userId || (auth.roles.includes("TEACHER") && teacherId === auth.userId);
+}
+
+async function logCertificateIssued(certificate: {
+  id: string;
+  userId: string;
+  courseId: string;
+  folio: string;
+  verificationCode: string;
+}) {
+  const rules = await getPrisma().notificationRule.findMany({
+    where: {
+      eventType: "CERTIFICATE_ISSUED",
+      enabled: true
+    }
+  });
+
+  await Promise.all(
+    rules.map((rule) =>
+      getPrisma().notificationLog.create({
+        data: {
+          eventType: "CERTIFICATE_ISSUED",
+          userId: certificate.userId,
+          courseId: certificate.courseId,
+          payload: {
+            ruleId: rule.id,
+            certificateId: certificate.id,
+            folio: certificate.folio,
+            verificationCode: certificate.verificationCode
+          },
+          sentTo: rule.recipients,
+          status: "PENDING"
+        }
+      })
+    )
+  );
+}
+
+function serializeCertificate(certificate: {
+  id: string;
+  status: string;
+  folio: string;
+  verificationCode: string;
+  pdfStorageKey: string;
+  issuedAt: Date;
+  revokedAt: Date | null;
+  user: { id: string; displayName: string; email: string };
+  course: { id: string; title: string; slug: string; teacherId: string | null };
+}) {
+  return {
+    id: certificate.id,
+    status: certificate.status,
+    folio: certificate.folio,
+    verificationCode: certificate.verificationCode,
+    pdfStorageKey: certificate.pdfStorageKey,
+    issuedAt: certificate.issuedAt,
+    revokedAt: certificate.revokedAt,
+    user: certificate.user,
+    course: {
+      id: certificate.course.id,
+      title: certificate.course.title,
+      slug: certificate.course.slug
+    }
+  };
+}

@@ -1,0 +1,25 @@
+{
+  "name": "tsc-capacita-lms",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:api": "pnpm --filter @tsc-capacita/api dev",
+    "dev:web": "pnpm --filter @tsc-capacita/web dev",
+    "build": "pnpm --filter @tsc-capacita/wp-compat build && pnpm --filter @tsc-capacita/db build && pnpm --filter @tsc-capacita/api build && pnpm --filter @tsc-capacita/web build",
+    "typecheck": "pnpm --filter @tsc-capacita/wp-compat build && pnpm --filter @tsc-capacita/db build && pnpm --filter @tsc-capacita/wp-audit typecheck && pnpm --filter @tsc-capacita/wp-import typecheck && pnpm --filter @tsc-capacita/hostinger-tools typecheck && pnpm --filter @tsc-capacita/api typecheck && pnpm --filter @tsc-capacita/web typecheck",
+    "test": "pnpm -r --if-present test",
+    "prisma:generate": "pnpm --filter @tsc-capacita/db prisma:generate",
+    "prisma:migrate": "pnpm --filter @tsc-capacita/db prisma:migrate",
+    "prisma:push": "pnpm --filter @tsc-capacita/db prisma:push",
+    "wp:audit": "pnpm --filter @tsc-capacita/wp-audit run dump",
+    "wp:export-users": "pnpm --filter @tsc-capacita/wp-audit run export-users",
+    "wp:export-catalog": "pnpm --filter @tsc-capacita/wp-audit run export-catalog",
+    "wp:import": "pnpm --filter @tsc-capacita/wp-import run import",
+    "hostinger:discover": "pnpm --filter @tsc-capacita/hostinger-tools run discover"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

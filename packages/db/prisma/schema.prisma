@@ -1,0 +1,523 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+  INVITED
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  SUSPENDED
+}
+
+enum LessonKind {
+  TEXT
+  VIDEO
+  RESOURCE
+  MIXED
+}
+
+enum QuizStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  FILL_IN_THE_BLANK
+  SHORT_TEXT
+  OPEN_ENDED
+  MATCHING
+  ORDERING
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  PASSED
+  FAILED
+  EXPIRED
+  VOIDED
+}
+
+enum CertificateStatus {
+  ISSUED
+  REVOKED
+}
+
+enum NotificationEventType {
+  QUIZ_PASSED
+  QUIZ_FAILED
+  COURSE_COMPLETED
+  CERTIFICATE_ISSUED
+}
+
+enum AchievementStepTrigger {
+  QUIZ_PASSED
+  COURSE_COMPLETED
+}
+
+enum CourseReviewStatus {
+  APPROVED
+  HIDDEN
+  PENDING
+}
+
+enum EvidenceStatus {
+  CONFIRMED
+  CONFIGURED
+  UNUSED
+  UNKNOWN
+}
+
+model User {
+  id                 String       @id @default(cuid())
+  email              String       @unique
+  displayName        String
+  serviceLabel       String?
+  status             UserStatus   @default(ACTIVE)
+  passwordHash       String?
+  legacyPasswordHash String?
+  legacyPasswordAlgo String?
+  sourceSystem       String?
+  sourceId           String?
+  lastLoginAt        DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  roles              UserRole[]
+  authoredCourses    Course[]     @relation("CourseTeacher")
+  enrollments        Enrollment[]
+  quizAttempts       QuizAttempt[]
+  lessonProgress     LessonProgress[]
+  certificates       Certificate[]
+  achievementAwards  AchievementAward[]
+  achievementEvents  AchievementEvent[]
+  courseReviews      CourseReview[]
+
+  @@unique([sourceSystem, sourceId])
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  role      Role
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+}
+
+model Course {
+  id              String         @id @default(cuid())
+  title           String
+  slug            String         @unique
+  description     String?
+  excerpt         String?
+  status          CourseStatus   @default(DRAFT)
+  teacherId       String?
+  level           String?
+  durationSec     Int?
+  thumbnailAssetId String?
+  sourceSystem    String?
+  sourceId        String?
+  publishedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  teacher         User?          @relation("CourseTeacher", fields: [teacherId], references: [id])
+  modules         CourseModule[]
+  lessons         Lesson[]
+  quizzes         Quiz[]
+  enrollments     Enrollment[]
+  assets          Asset[]
+  certificates    Certificate[]
+  achievementSteps AchievementStep[]
+  achievementAwards AchievementAward[]
+  reviews         CourseReview[]
+  templateLinks   CertificateTemplateCourse[]
+
+  @@unique([sourceSystem, sourceId])
+}
+
+model CourseModule {
+  id           String   @id @default(cuid())
+  courseId     String
+  title        String
+  position     Int
+  sourceSystem String?
+  sourceId     String?
+  course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons      Lesson[]
+  quizzes      Quiz[]
+
+  @@unique([courseId, position])
+  @@unique([sourceSystem, sourceId])
+}
+
+model Lesson {
+  id           String       @id @default(cuid())
+  courseId     String
+  moduleId     String?
+  title        String
+  slug         String
+  kind         LessonKind   @default(MIXED)
+  body         String?
+  videoProvider String?
+  videoUrl      String?
+  videoEmbed    String?
+  position     Int
+  durationSec  Int?
+  sourceSystem String?
+  sourceId     String?
+  course       Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  module       CourseModule? @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  assets       Asset[]
+  progress     LessonProgress[]
+
+  @@unique([courseId, slug])
+  @@unique([sourceSystem, sourceId])
+}
+
+model Asset {
+  id           String   @id @default(cuid())
+  courseId     String?
+  lessonId     String?
+  title        String
+  mimeType     String?
+  storageKey   String
+  originalUrl  String?
+  checksum     String?
+  sizeBytes    BigInt?
+  sourceSystem String?
+  sourceId     String?
+  createdAt    DateTime @default(now())
+  course       Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  lesson       Lesson?  @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceSystem, sourceId])
+}
+
+model Enrollment {
+  id              String           @id @default(cuid())
+  userId          String
+  courseId        String
+  status          EnrollmentStatus @default(ACTIVE)
+  progressPercent Decimal          @default(0) @db.Decimal(5, 2)
+  enrolledAt      DateTime         @default(now())
+  completedAt     DateTime?
+  sourceSystem    String?
+  sourceId        String?
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course          Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@unique([sourceSystem, sourceId])
+}
+
+model LessonProgress {
+  id          String    @id @default(cuid())
+  userId      String
+  lessonId    String
+  completedAt DateTime?
+  lastSeenAt  DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson      Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+}
+
+model Quiz {
+  id                 String        @id @default(cuid())
+  courseId           String
+  moduleId           String?
+  title              String
+  slug               String
+  status             QuizStatus    @default(DRAFT)
+  position           Int           @default(0)
+  timeLimitSec       Int?
+  passingScorePercent Decimal?     @db.Decimal(5, 2)
+  maxAttempts        Int?
+  feedbackMode       String?
+  questionsOrder     String?
+  autoStart          Boolean       @default(false)
+  hideTimeDisplay    Boolean       @default(false)
+  sourceSystem       String?
+  sourceId           String?
+  course             Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  module             CourseModule? @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  questions          Question[]
+  attempts           QuizAttempt[]
+  achievementSteps   AchievementStep[]
+
+  @@unique([courseId, slug])
+  @@index([courseId, moduleId, position])
+  @@unique([sourceSystem, sourceId])
+}
+
+model Question {
+  id             String         @id @default(cuid())
+  quizId         String
+  type           QuestionType
+  prompt         String
+  description    String?
+  explanation    String?
+  position       Int
+  points         Decimal        @default(1) @db.Decimal(8, 2)
+  sourceSystem   String?
+  sourceId       String?
+  quiz           Quiz           @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  options        QuestionOption[]
+  answers        QuizAnswer[]
+
+  @@unique([quizId, position])
+  @@unique([sourceSystem, sourceId])
+}
+
+model QuestionOption {
+  id           String   @id @default(cuid())
+  questionId   String
+  label        String
+  value        String
+  gapMatch     String?
+  viewFormat   String?
+  position     Int
+  isCorrect    Boolean  @default(false)
+  sourceSystem String?
+  sourceId     String?
+  question     Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, position])
+  @@unique([sourceSystem, sourceId])
+}
+
+model QuizAttempt {
+  id             String        @id @default(cuid())
+  quizId         String
+  userId         String
+  status         AttemptStatus @default(IN_PROGRESS)
+  startedAt      DateTime      @default(now())
+  dueAt          DateTime?
+  submittedAt    DateTime?
+  scorePercent   Decimal?      @db.Decimal(5, 2)
+  totalQuestions  Int?
+  totalAnsweredQuestions Int?
+  totalMarks      Decimal?      @db.Decimal(8, 2)
+  earnedMarks     Decimal?      @db.Decimal(8, 2)
+  result          String?
+  questionOrder   String[]      @default([])
+  sourceSystem   String?
+  sourceId       String?
+  quiz           Quiz          @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers        QuizAnswer[]
+
+  @@index([quizId, userId])
+  @@unique([sourceSystem, sourceId])
+}
+
+model QuizAnswer {
+  id          String      @id @default(cuid())
+  attemptId   String
+  questionId  String
+  response    Json
+  score       Decimal?    @db.Decimal(8, 2)
+  gradedAt    DateTime?
+  attempt     QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question    Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+}
+
+model CertificateTemplate {
+  id              String     @id @default(cuid())
+  name            String
+  body            Json
+  signatureAssetId String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  courseLinks     CertificateTemplateCourse[]
+  certificates    Certificate[]
+}
+
+model CertificateTemplateCourse {
+  id         String              @id @default(cuid())
+  templateId String
+  courseId   String
+  template   CertificateTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  course     Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, courseId])
+}
+
+model Certificate {
+  id             String            @id @default(cuid())
+  userId         String
+  courseId       String
+  templateId     String?
+  status         CertificateStatus @default(ISSUED)
+  folio          String            @unique
+  verificationCode String          @unique
+  pdfStorageKey  String
+  issuedAt       DateTime          @default(now())
+  revokedAt      DateTime?
+  sourceSystem   String?
+  sourceId       String?
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course         Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  template       CertificateTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceSystem, sourceId])
+}
+
+model Achievement {
+  id           String             @id @default(cuid())
+  title        String
+  slug         String             @unique
+  description  String?
+  points       Int                @default(0)
+  sourceSystem String?
+  sourceId     String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  steps        AchievementStep[]
+  awards       AchievementAward[]
+
+  @@unique([sourceSystem, sourceId])
+}
+
+model AchievementStep {
+  id            String                 @id @default(cuid())
+  achievementId String
+  trigger       AchievementStepTrigger
+  courseId      String?
+  quizId        String?
+  requiredCount Int                    @default(1)
+  position      Int
+  sourceSystem  String?
+  sourceId      String?
+  achievement   Achievement            @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  course        Course?                @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  quiz          Quiz?                  @relation(fields: [quizId], references: [id], onDelete: SetNull)
+
+  @@unique([achievementId, position])
+  @@unique([sourceSystem, sourceId])
+}
+
+model AchievementAward {
+  id            String      @id @default(cuid())
+  userId        String
+  achievementId String
+  courseId      String?
+  awardedAt     DateTime
+  points        Int         @default(0)
+  sourceSystem  String?
+  sourceId      String?
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  course        Course?     @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceSystem, sourceId])
+  @@index([userId, achievementId])
+}
+
+model AchievementEvent {
+  id             String   @id @default(cuid())
+  userId         String
+  sourcePostId   String?
+  sourcePostType String?
+  title          String
+  points         Int      @default(0)
+  pointsType     String?
+  occurredAt     DateTime
+  sourceSystem   String?
+  sourceId       String?
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceSystem, sourceId])
+  @@index([userId, sourcePostType])
+}
+
+model CourseReview {
+  id           String             @id @default(cuid())
+  courseId     String
+  userId       String?
+  authorName   String
+  rating       Int?
+  body         String?
+  status       CourseReviewStatus @default(HIDDEN)
+  sourceSystem String?
+  sourceId     String?
+  createdAt    DateTime
+  course       Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user         User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([courseId, status])
+  @@unique([sourceSystem, sourceId])
+}
+
+model NotificationRule {
+  id          String                @id @default(cuid())
+  eventType   NotificationEventType
+  recipients  String[]
+  subject     String
+  enabled     Boolean               @default(true)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+}
+
+model NotificationLog {
+  id          String                @id @default(cuid())
+  eventType   NotificationEventType
+  userId      String?
+  courseId    String?
+  payload     Json
+  sentTo      String[]
+  providerId  String?
+  status      String
+  createdAt   DateTime              @default(now())
+}
+
+model FeatureEvidence {
+  id          String         @id @default(cuid())
+  area        String
+  feature     String
+  status      EvidenceStatus @default(UNKNOWN)
+  evidence    String?
+  sourcePath  String?
+  observedAt  DateTime       @default(now())
+}
+
+model MigrationMap {
+  id            String   @id @default(cuid())
+  sourceSystem  String
+  sourceTable   String
+  sourceId      String
+  targetModel   String
+  targetId      String
+  createdAt     DateTime @default(now())
+
+  @@unique([sourceSystem, sourceTable, sourceId, targetModel])
+}
