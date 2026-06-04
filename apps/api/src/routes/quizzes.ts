@@ -61,7 +61,7 @@ export async function registerQuizRoutes(server: FastifyInstance) {
     if (activeAttempt && (!activeAttempt.dueAt || activeAttempt.dueAt > new Date())) {
       return {
         attempt: serializeAttempt(activeAttempt),
-        questions: publicQuestions(orderQuestionsForAttempt(quiz.questions, activeAttempt.questionOrder))
+        questions: publicQuestions(orderQuestionsForAttempt(quiz.questions, activeAttempt.questionOrder), activeAttempt.id)
       };
     }
 
@@ -98,7 +98,7 @@ export async function registerQuizRoutes(server: FastifyInstance) {
 
     return reply.code(201).send({
       attempt: serializeAttempt(attempt),
-      questions: publicQuestions(questions)
+      questions: publicQuestions(questions, attempt.id)
     });
   });
 
@@ -148,7 +148,7 @@ export async function registerQuizRoutes(server: FastifyInstance) {
 
     return {
       attempt: serializeAttempt(attempt),
-      questions: publicQuestions(questions),
+      questions: publicQuestions(questions, attempt.id),
       answers: attempt.answers.map((answer) => ({
         questionId: answer.questionId,
         response: answer.response,
@@ -334,25 +334,76 @@ function publicQuestions(
       id: string;
       label: string;
       value: string;
+      gapMatch: string | null;
       position: number;
     }>;
-  }>
+  }>,
+  attemptId: string
 ) {
-  return questions.map((question, index) => ({
-    id: question.id,
-    type: question.type,
-    prompt: question.prompt,
-    description: question.description,
-    position: index + 1,
-    points: question.points.toNumber(),
-    options: question.options
-      .sort((left, right) => left.position - right.position)
-      .map((option) => ({
+  return questions.map((question, index) => {
+    const base = {
+      id: question.id,
+      type: question.type,
+      prompt: question.prompt,
+      description: question.description,
+      position: index + 1,
+      points: question.points.toNumber()
+    };
+
+    // MATCHING: expose left terms in order + a shuffled pool of the right-side
+    // matches (never paired, so the answer is not revealed).
+    if (question.type === "MATCHING") {
+      const left = [...question.options]
+        .sort((leftOption, rightOption) => leftOption.position - rightOption.position)
+        .map((option) => ({ id: option.id, label: option.label, value: option.value }));
+      const matchPool = seededShuffle(
+        Array.from(new Set(question.options.map((option) => option.gapMatch ?? "").filter((value) => value.length > 0))),
+        `${attemptId}:${question.id}:pool`
+      );
+      return { ...base, options: left, matchPool };
+    }
+
+    // ORDERING: shuffle the items (stable per attempt) so the correct order is
+    // not revealed; the student reorders them.
+    if (question.type === "ORDERING") {
+      const shuffled = seededShuffle([...question.options], `${attemptId}:${question.id}`).map((option) => ({
         id: option.id,
         label: option.label,
         value: option.value
-      }))
-  }));
+      }));
+      return { ...base, options: shuffled };
+    }
+
+    const options = [...question.options]
+      .sort((leftOption, rightOption) => leftOption.position - rightOption.position)
+      .map((option) => ({ id: option.id, label: option.label, value: option.value }));
+    return { ...base, options };
+  });
+}
+
+// Deterministic shuffle (mulberry32-style PRNG seeded by a string) so options
+// stay stable across reloads of the same attempt without persisting extra state.
+function seededShuffle<T>(items: T[], seed: string): T[] {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i += 1) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const rand = () => {
+    h += 0x6d2b79f5;
+    let t = h;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand() * (i + 1));
+    const tmp = arr[i]!;
+    arr[i] = arr[j]!;
+    arr[j] = tmp;
+  }
+  return arr;
 }
 
 function toGradingQuestions(

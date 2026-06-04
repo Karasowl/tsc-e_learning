@@ -126,6 +126,7 @@ type QuizQuestion = {
   position: number;
   points: number;
   options: Array<{ id: string; label: string; value: string }>;
+  matchPool?: string[];
 };
 
 type QuizAttempt = {
@@ -178,7 +179,10 @@ type NotificationLog = {
   createdAt: string;
 };
 
-type AnswerState = Record<string, { selectedOptionIds: string[]; text: string }>;
+type AnswerState = Record<
+  string,
+  { selectedOptionIds: string[]; text: string; matches?: Record<string, string>; order?: string[] }
+>;
 
 type View = "courses" | "manage" | "report" | "certificates" | "notifications" | "teachers" | "completed";
 
@@ -354,7 +358,19 @@ export default function Home() {
         body: JSON.stringify({ quizId })
       });
       setQuizAttempt(payload);
-      setAnswers(Object.fromEntries(payload.questions.map((question) => [question.id, { selectedOptionIds: [], text: "" }])));
+      setAnswers(
+        Object.fromEntries(
+          payload.questions.map((question) => [
+            question.id,
+            {
+              selectedOptionIds: [],
+              text: "",
+              matches: {},
+              order: question.type === "ORDERING" ? question.options.map((option) => option.id) : []
+            }
+          ])
+        )
+      );
     } catch (quizError) {
       setError(errorMessage(quizError));
     } finally {
@@ -376,8 +392,11 @@ export default function Home() {
           body: JSON.stringify({
             answers: Object.entries(answers).map(([questionId, answer]) => ({
               questionId,
-              selectedOptionIds: answer.selectedOptionIds,
-              text: answer.text
+              selectedOptionIds: answer.order && answer.order.length > 0 ? answer.order : answer.selectedOptionIds,
+              text: answer.text,
+              ...(answer.matches && Object.keys(answer.matches).length > 0
+                ? { matches: Object.entries(answer.matches).map(([optionId, value]) => ({ optionId, value })) }
+                : {})
             }))
           })
         }
@@ -1015,10 +1034,14 @@ function QuizPanel({
               onChange={(event) =>
                 onAnswerChange({
                   ...answers,
-                  [question.id]: { selectedOptionIds: answers[question.id]?.selectedOptionIds ?? [], text: event.target.value }
+                  [question.id]: { ...(answers[question.id] ?? { selectedOptionIds: [], text: "" }), text: event.target.value }
                 })
               }
             />
+          ) : question.type === "MATCHING" ? (
+            <MatchingInput question={question} answers={answers} onAnswerChange={onAnswerChange} />
+          ) : question.type === "ORDERING" ? (
+            <OrderingInput question={question} answers={answers} onAnswerChange={onAnswerChange} />
           ) : (
             question.options.map((option) => (
               <label className="option-row" key={option.id}>
@@ -1028,7 +1051,7 @@ function QuizPanel({
                   onChange={(event) => setQuestionAnswer(question, option.id, event.target.checked)}
                   type={question.type === "MULTIPLE_CHOICE" ? "checkbox" : "radio"}
                 />
-                {option.label}
+                {option.label || option.value}
               </label>
             ))
           )}
@@ -1046,6 +1069,79 @@ function QuizPanel({
         </button>
       )}
     </article>
+  );
+}
+
+function MatchingInput({
+  question,
+  answers,
+  onAnswerChange
+}: {
+  question: QuizQuestion;
+  answers: AnswerState;
+  onAnswerChange: (answers: AnswerState) => void;
+}) {
+  const current = answers[question.id]?.matches ?? {};
+  function setMatch(optionId: string, value: string) {
+    const prev = answers[question.id] ?? { selectedOptionIds: [], text: "" };
+    onAnswerChange({
+      ...answers,
+      [question.id]: { ...prev, matches: { ...(prev.matches ?? {}), [optionId]: value } }
+    });
+  }
+  return (
+    <div className="match-input">
+      {question.options.map((option) => (
+        <div className="match-row" key={option.id}>
+          <span>{option.value}</span>
+          <select value={current[option.id] ?? ""} onChange={(event) => setMatch(option.id, event.target.value)}>
+            <option value="">Elegir…</option>
+            {(question.matchPool ?? []).map((match) => (
+              <option key={match} value={match}>{match}</option>
+            ))}
+          </select>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OrderingInput({
+  question,
+  answers,
+  onAnswerChange
+}: {
+  question: QuizQuestion;
+  answers: AnswerState;
+  onAnswerChange: (answers: AnswerState) => void;
+}) {
+  const order = answers[question.id]?.order ?? question.options.map((option) => option.id);
+  const byId = new Map(question.options.map((option) => [option.id, option]));
+  function move(index: number, delta: number) {
+    const next = [...order];
+    const target = index + delta;
+    if (target < 0 || target >= next.length) {
+      return;
+    }
+    const tmp = next[index]!;
+    next[index] = next[target]!;
+    next[target] = tmp;
+    const prev = answers[question.id] ?? { selectedOptionIds: [], text: "" };
+    onAnswerChange({ ...answers, [question.id]: { ...prev, order: next } });
+  }
+  return (
+    <div className="order-input">
+      {order.map((id, index) => (
+        <div className="order-row" key={id}>
+          <span className="order-num">{index + 1}</span>
+          <span className="order-text">{byId.get(id)?.value ?? ""}</span>
+          <span className="order-controls">
+            <button type="button" className="icon-button" onClick={() => move(index, -1)} title="Subir">↑</button>
+            <button type="button" className="icon-button" onClick={() => move(index, 1)} title="Bajar">↓</button>
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
