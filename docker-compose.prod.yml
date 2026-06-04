@@ -1,17 +1,20 @@
-# Production stack for the VPS: PostgreSQL + API + Caddy (TLS reverse proxy).
-# The web (Next.js) runs on Vercel and is NOT part of this stack; it reaches the
-# API over HTTPS at API_DOMAIN.
+# Production stack for the Hostinger VPS (srv1304241 / 82.25.95.86).
+# PostgreSQL + API only. The web (Next.js) runs on Vercel.
 #
-# This stack is intentionally VPS-agnostic: everything is containers + a single
-# .env + named volumes. Moving to another VPS = install Docker, clone repo, copy
-# .env, restore the postgres dump and the api_storage volume, then
-# `docker compose -f docker-compose.prod.yml up -d`. No host-specific steps.
+# Integrates with the VPS's EXISTING Traefik reverse proxy (Docker provider,
+# opt-in) via the external `traefik-proxy` network + labels — same pattern as the
+# other stacks on the box (whisperall-api, etc.). NO published ports, so there is
+# ZERO conflict with Traefik/Odoo/n8n/whisperall. Traefik issues the TLS cert via
+# the existing `letsencrypt` resolver once API_DOMAIN resolves to this host.
+#
+# VPS-agnostic: containers + .env + named volumes. Moving VPS = install Docker,
+# copy the repo + .env, restore the postgres dump and the api_storage volume,
+# `docker compose -f docker-compose.prod.yml up -d`, repoint DNS. On a VPS without
+# Traefik, add a reverse proxy (e.g. Caddy) in front of the api:4000 port.
 #
 # Usage on the VPS:
 #   cp .env.production.example .env   # then edit with real values
 #   docker compose -f docker-compose.prod.yml up -d --build
-#
-# Required .env keys: see .env.production.example
 
 services:
   db:
@@ -23,10 +26,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # Not published to the host: only the api container reaches it over the
-    # internal compose network. Keeps Postgres off the public internet.
-    expose:
-      - "5432"
+    networks:
+      - internal
+    # Internal only — never published to the host or the public internet.
+    mem_limit: 1g
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -43,28 +46,27 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    expose:
-      - "4000"
+    networks:
+      - internal
+      - traefik-proxy
+    # Bounded so the LMS can never starve the other production apps on the box.
+    mem_limit: 768m
+    cpus: 1.5
     volumes:
       - api_storage:/app/storage
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-proxy
+      - "traefik.http.routers.tsc-api.rule=Host(`${API_DOMAIN}`)"
+      - traefik.http.routers.tsc-api.entrypoints=websecure
+      - traefik.http.routers.tsc-api.tls.certresolver=letsencrypt
+      - traefik.http.services.tsc-api.loadbalancer.server.port=4000
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    depends_on:
-      - api
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      API_DOMAIN: ${API_DOMAIN}
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+networks:
+  internal:
+  traefik-proxy:
+    external: true
 
 volumes:
   postgres_data:
   api_storage:
-  caddy_data:
-  caddy_config:
