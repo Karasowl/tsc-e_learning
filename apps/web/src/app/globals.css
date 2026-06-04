@@ -846,6 +846,102 @@ tr:last-child td {
   border-radius: 6px;
 }
 
+/* Authoring (course/lesson editor) */
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--navy-2);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+label textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font: inherit;
+  resize: vertical;
+}
+
+.cover-field {
+  grid-column: 1 / -1;
+}
+
+.cover-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cover-thumb {
+  width: 110px;
+  height: 70px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.cover-thumb.empty svg {
+  width: 22px;
+  height: 22px;
+}
+
+.file-button {
+  cursor: pointer;
+}
+
+.module-edit {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--surface-2);
+}
+
+.module-edit-head,
+.lesson-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lesson-edit {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  background: #fff;
+}
+
+.lesson-edit-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
 @media (max-width: 1180px) {
   .course-workspace,
   .learning-layout,

@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  Boxes,
   Check,
   ChevronRight,
   Clock,
@@ -19,6 +20,7 @@ import {
   UserRound
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { AuthoringView } from "./authoring";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -177,7 +179,7 @@ type NotificationLog = {
 
 type AnswerState = Record<string, { selectedOptionIds: string[]; text: string }>;
 
-type View = "courses" | "report" | "certificates" | "notifications";
+type View = "courses" | "manage" | "report" | "certificates" | "notifications";
 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
@@ -587,6 +589,9 @@ export default function Home() {
         <nav className="nav-stack" aria-label="Secciones">
           <NavButton active={view === "courses"} icon={<BookOpen aria-hidden />} label="Cursos" onClick={() => setView("courses")} />
           {isPrivileged ? (
+            <NavButton active={view === "manage"} icon={<Boxes aria-hidden />} label="Gestionar cursos" onClick={() => setView("manage")} />
+          ) : null}
+          {isPrivileged ? (
             <NavButton active={view === "report"} icon={<BarChart3 aria-hidden />} label="Reporte" onClick={() => setView("report")} />
           ) : null}
           <NavButton active={view === "certificates"} icon={<Award aria-hidden />} label="Diplomas" onClick={() => setView("certificates")} />
@@ -716,6 +721,10 @@ export default function Home() {
               )}
             </div>
           </section>
+        ) : null}
+
+        {view === "manage" && isPrivileged && token ? (
+          <AuthoringView token={token} isAdmin={Boolean(isAdmin)} />
         ) : null}
 
         {view === "report" && isPrivileged ? (
