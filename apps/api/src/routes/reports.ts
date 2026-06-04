@@ -65,7 +65,7 @@ export async function registerReportRoutes(server: FastifyInstance) {
       )
       .header(
         "content-disposition",
-        `attachment; filename="reporte-estudiantes-tsc.xlsx"`
+        `attachment; filename="reporte-colaboradores-tsc.xlsx"`
       )
       .send(Buffer.from(buffer));
   });
@@ -154,7 +154,7 @@ function buildReportWorkbook(report: StudentReport) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "TSC Capacita";
 
-  const sheet = workbook.addWorksheet("Reporte estudiantes");
+  const sheet = workbook.addWorksheet("Reporte colaboradores");
   sheet.columns = [
     { header: "Colaborador", key: "studentName", width: 32 },
     { header: "Correo", key: "email", width: 30 },

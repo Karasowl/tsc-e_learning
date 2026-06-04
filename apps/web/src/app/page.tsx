@@ -460,7 +460,7 @@ export default function Home() {
       if (!response.ok) {
         throw new Error("No se pudo generar el Excel");
       }
-      downloadBlob(await response.blob(), `reporte-estudiantes-${todayStamp()}.xlsx`);
+      downloadBlob(await response.blob(), `reporte-colaboradores-${todayStamp()}.xlsx`);
     } catch (exportError) {
       setError(errorMessage(exportError));
     } finally {
@@ -536,15 +536,15 @@ export default function Home() {
         <section className="login-copy">
           <img className="brand-logo" src="/tsc-logo.png" alt="TSC Private Security Consulting" />
           <h1>Capacitación TSC</h1>
-          <p>Acceso operativo a cursos, evaluaciones, diplomas y reportes de colaboradores.</p>
+          <p>Tu plataforma de formación: cursos, evaluaciones y diplomas, en un solo lugar.</p>
           <dl>
             <div>
-              <dt>Datos migrados</dt>
-              <dd>Usuarios, cursos, quizzes, progresos y diplomas desde WordPress Tutor LMS.</dd>
+              <dt>Aprende a tu ritmo</dt>
+              <dd>Accede a tus cursos, lecciones y videos cuando lo necesites.</dd>
             </div>
             <div>
-              <dt>Backend propio</dt>
-              <dd>API Dockerizada, PostgreSQL y almacenamiento local portable a VPS.</dd>
+              <dt>Obtén tu reconocimiento</dt>
+              <dd>Presenta tus evaluaciones y descarga tus diplomas al aprobar.</dd>
             </div>
           </dl>
         </section>
@@ -608,7 +608,7 @@ export default function Home() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p className="eyebrow">{user.roles.join(" · ")}</p>
+            <p className="eyebrow">{user.roles.map(roleLabel).join(" · ")}</p>
             <h1>{sectionTitle(view)}</h1>
           </div>
           <div className="user-pill">
@@ -638,7 +638,7 @@ export default function Home() {
                   <span>
                     <strong>{course.title}</strong>
                     <small>
-                      {course.counts.lessons} lecciones · {course.counts.quizzes} examenes
+                      {course.counts.lessons} lecciones · {course.counts.quizzes} exámenes
                     </small>
                   </span>
                   <ProgressBar value={course.progressPercent ?? 0} />
@@ -721,7 +721,7 @@ export default function Home() {
         {view === "report" && isPrivileged ? (
           <section className="data-section">
             <div className="section-header">
-              <h2>Reporte de estudiantes</h2>
+              <h2>Reporte de colaboradores</h2>
               <div className="quiz-actions">
                 <button className="icon-button" disabled={busy} onClick={loadReport} title="Actualizar" type="button">
                   <RefreshCw aria-hidden />
@@ -912,7 +912,7 @@ function LessonPanel({ lesson, onComplete }: { lesson: Lesson; onComplete: (less
     <article className="content-surface">
       <div className="section-header">
         <div>
-          <p className="eyebrow">{lesson.kind}</p>
+          <p className="eyebrow">{lessonKindLabel(lesson)}</p>
           <h2>{lesson.title}</h2>
         </div>
         <button className="secondary-button" disabled={lesson.completed} onClick={() => onComplete(lesson.id)} type="button">
@@ -1060,10 +1060,37 @@ function youtubeEmbedUrl(url: string | null) {
   return id ? `https://www.youtube.com/embed/${id}` : url;
 }
 
+function lessonKindLabel(lesson: { kind: string; videoUrl: string | null }) {
+  if (lesson.videoUrl || lesson.kind === "VIDEO") {
+    return "Video";
+  }
+  switch (lesson.kind) {
+    case "ASSIGNMENT":
+      return "Tarea";
+    case "QUIZ":
+      return "Evaluación";
+    default:
+      return "Lección";
+  }
+}
+
+function roleLabel(role: string) {
+  switch (role) {
+    case "ADMIN":
+      return "Administrador";
+    case "TEACHER":
+      return "Instructor";
+    case "STUDENT":
+      return "Colaborador";
+    default:
+      return role;
+  }
+}
+
 function sectionTitle(view: View) {
   switch (view) {
     case "report":
-      return "Reporte de estudiantes";
+      return "Reporte de colaboradores";
     case "certificates":
       return "Diplomas";
     case "notifications":
@@ -1132,7 +1159,7 @@ function buildReportPrintHtml(rows: ReportRow[], summary: Record<string, number>
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Reporte de estudiantes TSC</title>
+<title>Reporte de colaboradores TSC</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: Arial, Helvetica, sans-serif; color: #131a2e; margin: 24px; }
@@ -1159,7 +1186,7 @@ function buildReportPrintHtml(rows: ReportRow[], summary: Record<string, number>
   <header>
     <img src="${escapeHtml(typeof window !== "undefined" ? window.location.origin : "")}/tsc-logo.png" alt="TSC" onerror="this.remove()">
     <div>
-      <h1>Reporte de estudiantes</h1>
+      <h1>Reporte de colaboradores</h1>
       <p>TSC Capacita &middot; Generado el ${issuedAt} &middot; ${rows.length} registros</p>
     </div>
   </header>

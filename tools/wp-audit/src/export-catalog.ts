@@ -859,7 +859,7 @@ function buildTutorSectionsByCourse(posts: Map<string, PostRecord>, postMeta: Ma
     byCourse[courseId] = [
       {
         sourceId: `tutor-direct-${courseId}`,
-        title: "Direct course items",
+        title: "Contenido del curso",
         order: 0,
         items
       },

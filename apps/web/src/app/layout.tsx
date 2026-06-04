@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TSC Capacita LMS",
-  description: "Plataforma propia de capacitacion TSC",
+  title: "Capacitación TSC",
+  description: "Plataforma de capacitación de TSC Seguridad Privada: cursos, evaluaciones y diplomas.",
   icons: {
     icon: "/favicon.png"
   }
