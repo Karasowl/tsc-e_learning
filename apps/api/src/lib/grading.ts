@@ -14,6 +14,12 @@ export type GradingOption = {
   value: string;
   gapMatch: string | null;
   isCorrect: boolean;
+  position: number;
+};
+
+export type SubmittedMatch = {
+  optionId: string;
+  value: string;
 };
 
 export type GradingQuestion = {
@@ -27,12 +33,14 @@ export type SubmittedAnswer = {
   questionId: string;
   selectedOptionIds?: string[];
   text?: string;
+  matches?: SubmittedMatch[];
 };
 
 export type QuestionGrade = {
   questionId: string;
   selectedOptionIds: string[];
   text: string | null;
+  matches: SubmittedMatch[];
   isCorrect: boolean;
   score: number;
 };
@@ -55,12 +63,14 @@ export function gradeQuizSubmission(
     const answer = answersByQuestion.get(question.id);
     const selectedOptionIds = uniqueStrings(answer?.selectedOptionIds ?? []);
     const text = normalizeNullableText(answer?.text);
-    const isCorrect = isQuestionCorrect(question, selectedOptionIds, text);
+    const matches = (answer?.matches ?? []).filter((match) => match.optionId && match.value);
+    const isCorrect = isQuestionCorrect(question, selectedOptionIds, text, matches);
 
     return {
       questionId: question.id,
       selectedOptionIds,
       text,
+      matches,
       isCorrect,
       score: isCorrect ? question.points : 0
     };
@@ -69,7 +79,7 @@ export function gradeQuizSubmission(
   const totalMarks = round2(questions.reduce((sum, question) => sum + question.points, 0));
   const earnedMarks = round2(results.reduce((sum, result) => sum + result.score, 0));
   const totalAnsweredQuestions = results.filter(
-    (result) => result.selectedOptionIds.length > 0 || result.text !== null
+    (result) => result.selectedOptionIds.length > 0 || result.text !== null || result.matches.length > 0
   ).length;
 
   return {
@@ -82,7 +92,12 @@ export function gradeQuizSubmission(
   };
 }
 
-function isQuestionCorrect(question: GradingQuestion, selectedOptionIds: string[], text: string | null) {
+function isQuestionCorrect(
+  question: GradingQuestion,
+  selectedOptionIds: string[],
+  text: string | null,
+  matches: SubmittedMatch[]
+) {
   switch (question.type) {
     case "MULTIPLE_CHOICE":
       return sameSet(selectedOptionIds, correctOptionIds(question));
@@ -91,9 +106,35 @@ function isQuestionCorrect(question: GradingQuestion, selectedOptionIds: string[
       return selectedOptionIds.length === 1 && correctOptionIds(question).includes(selectedOptionIds[0]!);
     case "FILL_IN_THE_BLANK":
       return text !== null && acceptedFillAnswers(question).includes(normalizeText(text));
+    case "ORDERING":
+      return isOrderingCorrect(question, selectedOptionIds);
+    case "MATCHING":
+      return isMatchingCorrect(question, matches);
     default:
       return false;
   }
+}
+
+// ORDERING: the student submits option ids in their chosen order
+// (selectedOptionIds keeps insertion order); correct when it matches the
+// options sorted by their stored position.
+function isOrderingCorrect(question: GradingQuestion, orderedOptionIds: string[]) {
+  const correctOrder = [...question.options].sort((left, right) => left.position - right.position).map((option) => option.id);
+  if (correctOrder.length === 0 || orderedOptionIds.length !== correctOrder.length) {
+    return false;
+  }
+  return correctOrder.every((id, index) => orderedOptionIds[index] === id);
+}
+
+// MATCHING: each option is a pair (value = left term, gapMatch = correct right
+// term). Correct when every pair's submitted value matches its gapMatch.
+function isMatchingCorrect(question: GradingQuestion, matches: SubmittedMatch[]) {
+  const pairs = question.options.filter((option) => option.gapMatch !== null && option.gapMatch.trim().length > 0);
+  if (pairs.length === 0 || matches.length < pairs.length) {
+    return false;
+  }
+  const submitted = new Map(matches.map((match) => [match.optionId, normalizeText(match.value)]));
+  return pairs.every((option) => submitted.get(option.id) === normalizeText(option.gapMatch ?? ""));
 }
 
 function correctOptionIds(question: GradingQuestion) {

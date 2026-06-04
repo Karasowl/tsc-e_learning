@@ -4,14 +4,19 @@ import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import type { AppConfig } from "./lib/config.js";
 import { startNotificationWorker } from "./lib/notifications-worker.js";
+import { registerAssetRoutes } from "./routes/assets.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerCertificateRoutes } from "./routes/certificates.js";
+import { registerCourseAdminRoutes } from "./routes/courses-admin.js";
 import { registerCourseRoutes } from "./routes/courses.js";
+import { registerDirectoryRoutes } from "./routes/directory.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerInventoryRoutes } from "./routes/inventory.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
+import { registerQuizAdminRoutes } from "./routes/quizzes-admin.js";
 import { registerQuizRoutes } from "./routes/quizzes.js";
 import { registerReportRoutes } from "./routes/reports.js";
+import { registerReviewRoutes } from "./routes/reviews.js";
 
 export async function buildServer(config: AppConfig) {
   const allowedOrigins = new Set<string>([config.webPublicUrl, ...config.corsOrigins]);
@@ -56,14 +61,19 @@ export async function buildServer(config: AppConfig) {
     }
   });
 
+  await registerAssetRoutes(server, config);
   await registerAuthRoutes(server);
   await registerCertificateRoutes(server, config);
+  await registerCourseAdminRoutes(server);
   await registerCourseRoutes(server);
+  await registerDirectoryRoutes(server);
   await registerHealthRoutes(server);
   await registerInventoryRoutes(server);
   await registerNotificationRoutes(server, config);
+  await registerQuizAdminRoutes(server);
   await registerQuizRoutes(server);
   await registerReportRoutes(server);
+  await registerReviewRoutes(server);
 
   const notificationWorker = startNotificationWorker(config, server.log);
   server.addHook("onClose", async () => {

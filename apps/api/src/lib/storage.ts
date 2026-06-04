@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export type StoredObject = {
@@ -13,6 +13,7 @@ export interface StorageProvider {
     key: string;
     bytes: Buffer;
   }): Promise<StoredObject>;
+  getObject(key: string): Promise<Buffer>;
 }
 
 export class LocalStorageProvider implements StorageProvider {
@@ -29,5 +30,11 @@ export class LocalStorageProvider implements StorageProvider {
       checksum: createHash("sha256").update(input.bytes).digest("hex"),
       sizeBytes: input.bytes.byteLength
     };
+  }
+
+  async getObject(key: string): Promise<Buffer> {
+    const safeKey = key.replaceAll("\\", "/").replace(/^\/+/, "");
+    const fullPath = path.join(this.root, safeKey);
+    return readFile(fullPath);
   }
 }

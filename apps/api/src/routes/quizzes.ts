@@ -18,7 +18,10 @@ const submitAttemptSchema = z.object({
     z.object({
       questionId: z.string().min(1),
       selectedOptionIds: z.array(z.string().min(1)).optional(),
-      text: z.string().optional()
+      text: z.string().optional(),
+      matches: z
+        .array(z.object({ optionId: z.string().min(1), value: z.string() }))
+        .optional()
     })
   )
 });
@@ -363,6 +366,7 @@ function toGradingQuestions(
       value: string;
       gapMatch: string | null;
       isCorrect: boolean;
+      position: number;
     }>;
   }>
 ): GradingQuestion[] {
@@ -375,7 +379,8 @@ function toGradingQuestions(
       label: option.label,
       value: option.value,
       gapMatch: option.gapMatch,
-      isCorrect: option.isCorrect
+      isCorrect: option.isCorrect,
+      position: option.position
     }))
   }));
 }

@@ -782,6 +782,70 @@ tr:last-child td {
   line-height: 1.5;
 }
 
+/* Rich text editor (lesson body) */
+.rte {
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.rte-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.rte-toolbar button {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--brand-2);
+}
+
+.rte-toolbar button:hover {
+  background: #fff;
+  border-color: var(--line);
+}
+
+.rte-toolbar button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.rte-area {
+  min-height: 180px;
+  max-height: 460px;
+  overflow: auto;
+  padding: 12px 14px;
+  line-height: 1.6;
+  outline: none;
+}
+
+.rte-area:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+}
+
+.rte-area h2 {
+  font-size: 20px;
+  margin: 12px 0 6px;
+}
+
+.rte-area img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
 @media (max-width: 1180px) {
   .course-workspace,
   .learning-layout,
