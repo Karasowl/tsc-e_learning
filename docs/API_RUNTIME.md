@@ -115,9 +115,14 @@ All course, quiz, progress, and report routes require `Authorization: Bearer <to
   - Returns row data and summary counts for the UI/export layer.
   - Locally smoke-tested against the imported 148 enrollment rows.
 
+- `GET /reports/students/export.xlsx`
+  - Requires teacher or admin role; same `courseId` filter and access scope as `/reports/students`.
+  - Reuses the shared `buildStudentReport` logic (no duplicated status rules).
+  - Returns a real `.xlsx` (ExcelJS) with a `Reporte estudiantes` sheet and a `Resumen` sheet of status counts.
+  - The web report view also offers client-side PDF via a print-optimized HTML window (TSC-branded), mirroring the WordPress pdfMake approach.
+
 ## Still Pending
 
-- Excel/PDF export UI for the report.
 - Server-side PDF file generation for certificates. Current route produces printable/downloadable HTML and browser print-to-PDF.
 - Automatic background worker scheduling for notification processing. Manual admin processing exists.
 - Full frontend screens for the operational LMS.
