@@ -1,0 +1,70 @@
+# Production stack for the VPS: PostgreSQL + API + Caddy (TLS reverse proxy).
+# The web (Next.js) runs on Vercel and is NOT part of this stack; it reaches the
+# API over HTTPS at API_DOMAIN.
+#
+# This stack is intentionally VPS-agnostic: everything is containers + a single
+# .env + named volumes. Moving to another VPS = install Docker, clone repo, copy
+# .env, restore the postgres dump and the api_storage volume, then
+# `docker compose -f docker-compose.prod.yml up -d`. No host-specific steps.
+#
+# Usage on the VPS:
+#   cp .env.production.example .env   # then edit with real values
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Required .env keys: see .env.production.example
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Not published to the host: only the api container reaches it over the
+    # internal compose network. Keeps Postgres off the public internet.
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    expose:
+      - "4000"
+    volumes:
+      - api_storage:/app/storage
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  api_storage:
+  caddy_data:
+  caddy_config:
