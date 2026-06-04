@@ -95,4 +95,24 @@ export async function registerNotificationRoutes(server: FastifyInstance, config
     const result = await processPendingNotifications(provider, options);
     return { result };
   });
+
+  server.post("/notifications/retry", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+
+    if (!isAdmin(auth)) {
+      return reply.code(403).send({ error: "Admin role required" });
+    }
+
+    // Re-queue failed deliveries so the worker (or manual process) retries them.
+    // Useful after a transient SMTP outage marked logs as FAILED.
+    const { count } = await getPrisma().notificationLog.updateMany({
+      where: { status: "FAILED" },
+      data: { status: "PENDING" }
+    });
+
+    return { requeued: count };
+  });
 }

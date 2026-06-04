@@ -102,8 +102,21 @@ All course, quiz, progress, and report routes require `Authorization: Bearer <to
   - Admin-only recent log list.
 
 - `POST /notifications/process`
-  - Admin-only processing of pending logs through the configured SMTP provider.
+  - Admin-only on-demand processing of pending logs through the configured SMTP provider.
   - Pass/fail emails preserve the intent of the WordPress `course-completed.php` template: clear `APROBADO` or `REPROBADO` result and score context.
+
+- `POST /notifications/retry`
+  - Admin-only. Re-queues `FAILED` logs back to `PENDING` so the worker (or manual process) retries them after a transient SMTP outage. Returns `{ requeued }`.
+
+## Notifications Worker
+
+An in-process scheduled worker (`startNotificationWorker`) auto-delivers `PENDING` notification logs through SMTP. It is kept in-process (no Redis or extra container) so the backend stays portable to any VPS.
+
+- Runs only when SMTP is configured and `NOTIFICATIONS_WORKER_ENABLED` is not `false`.
+- Interval `NOTIFICATIONS_WORKER_INTERVAL_MS` (default 60000), batch `NOTIFICATIONS_WORKER_BATCH` (default 25).
+- Overlap-guarded (a slow batch never runs twice concurrently) and stopped on server close.
+- Disable it to deliver elsewhere (a separate process or external cron hitting `POST /notifications/process`) — both share the same `processPendingNotifications` function.
+- Verified end-to-end against a test SMTP account: a `PENDING` `QUIZ_PASSED` log was auto-sent and flipped to `SENT`.
 
 ## Instructor Report
 
@@ -129,5 +142,5 @@ All course, quiz, progress, and report routes require `Authorization: Bearer <to
 
 ## Still Pending
 
-- Automatic background worker scheduling for notification processing. Manual admin processing exists.
 - Full frontend screens for the operational LMS.
+- Production deployment (Vercel web + Dockerized API/Postgres on a VPS) and DNS cutover.

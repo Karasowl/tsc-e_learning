@@ -35,3 +35,4 @@ This file tracks what must be copied from WordPress and why. Do not implement a 
 | UI | Hide admin bar for non-admin users | confirmed | Active Code Snippet hides WordPress admin bar for users without `manage_options`. |
 | Email | Notify selected emails on pass/fail | configured | WP Mail SMTP and GamiPress email paths exist; debug logs include GamiPress email attempts and SMTP failures. Need current working recipients, copy, and pass/fail conditions. |
 | Email | Notification rules and SMTP processing | implemented-api | Admin rules/logs/process endpoints exist for quiz pass/fail, course completed, and certificate issued. Pending logs are sent through SMTP when configured. |
+| Email | Automatic notification worker | implemented | In-process scheduled worker auto-delivers pending logs via SMTP (no extra infra); toggle/interval/batch via env; `POST /notifications/retry` re-queues failed deliveries. Verified end-to-end with a test SMTP account. |

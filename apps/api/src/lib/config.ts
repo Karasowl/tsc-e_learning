@@ -15,7 +15,10 @@ const configSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   SMTP_FROM: z.string().default("TSC Capacita <capacitacion@tscseguridadprivada.com.mx>"),
   CERTIFICATE_BACKGROUND_URL: z.string().optional(),
-  CERTIFICATE_BACKGROUND_PATH: z.string().optional()
+  CERTIFICATE_BACKGROUND_PATH: z.string().optional(),
+  NOTIFICATIONS_WORKER_ENABLED: z.string().optional(),
+  NOTIFICATIONS_WORKER_INTERVAL_MS: z.coerce.number().int().min(5000).default(60000),
+  NOTIFICATIONS_WORKER_BATCH: z.coerce.number().int().positive().max(200).default(25)
 });
 
 export type AppConfig = {
@@ -36,6 +39,11 @@ export type AppConfig = {
   };
   certificateBackgroundUrl: string | undefined;
   certificateBackgroundPath: string | undefined;
+  notificationsWorker: {
+    enabled: boolean;
+    intervalMs: number;
+    batch: number;
+  };
 };
 
 export function readConfig(env = process.env): AppConfig {
@@ -58,6 +66,11 @@ export function readConfig(env = process.env): AppConfig {
       from: parsed.SMTP_FROM
     },
     certificateBackgroundUrl: parsed.CERTIFICATE_BACKGROUND_URL,
-    certificateBackgroundPath: parsed.CERTIFICATE_BACKGROUND_PATH
+    certificateBackgroundPath: parsed.CERTIFICATE_BACKGROUND_PATH,
+    notificationsWorker: {
+      enabled: parsed.NOTIFICATIONS_WORKER_ENABLED !== "false",
+      intervalMs: parsed.NOTIFICATIONS_WORKER_INTERVAL_MS,
+      batch: parsed.NOTIFICATIONS_WORKER_BATCH
+    }
   };
 }

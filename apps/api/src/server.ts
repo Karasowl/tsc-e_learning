@@ -3,6 +3,7 @@ import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import type { AppConfig } from "./lib/config.js";
+import { startNotificationWorker } from "./lib/notifications-worker.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerCertificateRoutes } from "./routes/certificates.js";
 import { registerCourseRoutes } from "./routes/courses.js";
@@ -50,6 +51,11 @@ export async function buildServer(config: AppConfig) {
   await registerNotificationRoutes(server, config);
   await registerQuizRoutes(server);
   await registerReportRoutes(server);
+
+  const notificationWorker = startNotificationWorker(config, server.log);
+  server.addHook("onClose", async () => {
+    notificationWorker.stop();
+  });
 
   return server;
 }
