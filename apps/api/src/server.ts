@@ -14,13 +14,20 @@ import { registerQuizRoutes } from "./routes/quizzes.js";
 import { registerReportRoutes } from "./routes/reports.js";
 
 export async function buildServer(config: AppConfig) {
-  const devOrigins = [
-    config.webPublicUrl,
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:3001",
-    "http://127.0.0.1:3001"
-  ];
+  const allowedOrigins = new Set<string>([config.webPublicUrl, ...config.corsOrigins]);
+  if (config.nodeEnv !== "production") {
+    for (const origin of [
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+      "http://localhost:3001",
+      "http://127.0.0.1:3001"
+    ]) {
+      allowedOrigins.add(origin);
+    }
+  }
+  // Allow this project's Vercel deployments (production alias + previews) so the
+  // web works before/after the DNS cutover without reconfiguring the API.
+  const vercelOrigin = /^https:\/\/tsc-capacita[a-z0-9-]*\.vercel\.app$/;
 
   const server = Fastify({
     logger: {
@@ -29,7 +36,13 @@ export async function buildServer(config: AppConfig) {
   });
 
   await server.register(cors, {
-    origin: config.nodeEnv === "production" ? config.webPublicUrl : Array.from(new Set(devOrigins)),
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin) || vercelOrigin.test(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
     credentials: true
   });
 

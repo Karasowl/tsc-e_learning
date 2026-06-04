@@ -39,6 +39,7 @@ function baseConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     certificateBackgroundUrl: undefined,
     certificateBackgroundPath: undefined,
     notificationsWorker: { enabled: true, intervalMs: 60000, batch: 25 },
+    corsOrigins: [],
     ...overrides
   };
 }

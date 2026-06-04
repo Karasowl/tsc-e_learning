@@ -18,7 +18,8 @@ const configSchema = z.object({
   CERTIFICATE_BACKGROUND_PATH: z.string().optional(),
   NOTIFICATIONS_WORKER_ENABLED: z.string().optional(),
   NOTIFICATIONS_WORKER_INTERVAL_MS: z.coerce.number().int().min(5000).default(60000),
-  NOTIFICATIONS_WORKER_BATCH: z.coerce.number().int().positive().max(200).default(25)
+  NOTIFICATIONS_WORKER_BATCH: z.coerce.number().int().positive().max(200).default(25),
+  CORS_ORIGINS: z.string().optional()
 });
 
 export type AppConfig = {
@@ -44,6 +45,7 @@ export type AppConfig = {
     intervalMs: number;
     batch: number;
   };
+  corsOrigins: string[];
 };
 
 export function readConfig(env = process.env): AppConfig {
@@ -71,6 +73,9 @@ export function readConfig(env = process.env): AppConfig {
       enabled: parsed.NOTIFICATIONS_WORKER_ENABLED !== "false",
       intervalMs: parsed.NOTIFICATIONS_WORKER_INTERVAL_MS,
       batch: parsed.NOTIFICATIONS_WORKER_BATCH
-    }
+    },
+    corsOrigins: parsed.CORS_ORIGINS
+      ? parsed.CORS_ORIGINS.split(",").map((value) => value.trim()).filter(Boolean)
+      : []
   };
 }
