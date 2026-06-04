@@ -151,6 +151,74 @@ export async function registerQuizAdminRoutes(server: FastifyInstance) {
     return reply.code(201).send({ quiz: serializeQuiz(quiz) });
   });
 
+  server.get("/admin/quizzes/:quizId", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+
+    if (!isTeacherOrAdmin(auth)) {
+      return reply.code(403).send({ error: "Teacher or admin role required" });
+    }
+
+    const params = quizIdParamSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: params.error.flatten() });
+    }
+
+    const quiz = await getPrisma().quiz.findUnique({
+      where: { id: params.data.quizId },
+      include: {
+        course: true,
+        questions: {
+          orderBy: { position: "asc" },
+          include: { options: { orderBy: { position: "asc" } } }
+        }
+      }
+    });
+
+    if (!quiz) {
+      return reply.code(404).send({ error: "Quiz not found" });
+    }
+
+    if (!canEditCourse(auth, quiz.course)) {
+      return reply.code(403).send({ error: "Course access denied" });
+    }
+
+    return {
+      quiz: {
+        id: quiz.id,
+        title: quiz.title,
+        moduleId: quiz.moduleId,
+        status: quiz.status,
+        timeLimitSec: quiz.timeLimitSec,
+        passingScorePercent: quiz.passingScorePercent === null ? null : Number(quiz.passingScorePercent),
+        maxAttempts: quiz.maxAttempts,
+        feedbackMode: quiz.feedbackMode,
+        questionsOrder: quiz.questionsOrder,
+        autoStart: quiz.autoStart,
+        hideTimeDisplay: quiz.hideTimeDisplay,
+        questions: quiz.questions.map((question) => ({
+          id: question.id,
+          type: question.type,
+          prompt: question.prompt,
+          description: question.description,
+          explanation: question.explanation,
+          position: question.position,
+          points: Number(question.points),
+          options: question.options.map((option) => ({
+            id: option.id,
+            label: option.label,
+            value: option.value,
+            gapMatch: option.gapMatch,
+            position: option.position,
+            isCorrect: option.isCorrect
+          }))
+        }))
+      }
+    };
+  });
+
   server.put("/admin/quizzes/:quizId", async (request, reply) => {
     const auth = await requireAuth(server, request, reply);
     if (!auth) {

@@ -1,45 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { ArrowLeft, Boxes, FilePlus2, FolderPlus, ImagePlus, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Boxes, ClipboardList, FilePlus2, FolderPlus, ImagePlus, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { RichTextEditor } from "./RichTextEditor";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
-export function assetFileUrl(assetId: string) {
-  return `${API_URL}/assets/${assetId}/file`;
-}
-
-async function authFetch<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      authorization: `Bearer ${token}`,
-      ...(init.headers ?? {})
-    }
-  });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: unknown };
-    throw new Error(typeof body.error === "string" ? body.error : `HTTP ${response.status}`);
-  }
-  return response.json() as Promise<T>;
-}
-
-async function uploadAsset(token: string, file: File): Promise<{ id: string }> {
-  const form = new FormData();
-  form.append("file", file);
-  const response = await fetch(`${API_URL}/assets`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}` },
-    body: form
-  });
-  if (!response.ok) {
-    throw new Error("No se pudo subir el archivo");
-  }
-  const data = (await response.json()) as { asset: { id: string } };
-  return data.asset;
-}
+import { QuizBuilder } from "./QuizBuilder";
+import { assetFileUrl, authFetch, uploadAsset } from "./apiClient";
 
 type AdminCourse = {
   id: string;
@@ -219,6 +184,7 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
 
   async function load() {
     setError(null);
@@ -340,6 +306,28 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
     }
   }
 
+  async function addQuiz(moduleId: string) {
+    if (!course) {
+      return;
+    }
+    const title = window.prompt("Título del examen:");
+    if (!title) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const data = await authFetch<{ quiz: { id: string } }>(token, `/admin/courses/${course.id}/quizzes`, {
+        method: "POST",
+        body: JSON.stringify({ title, moduleId })
+      });
+      setEditingQuizId(data.quiz.id);
+    } catch (quizError) {
+      setError(quizError instanceof Error ? quizError.message : String(quizError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!course) {
     return (
       <section className="data-section">
@@ -347,6 +335,21 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
           <ArrowLeft aria-hidden /> Volver
         </button>
         {error ? <p className="error-line">{error}</p> : <p className="empty-state">Cargando curso…</p>}
+      </section>
+    );
+  }
+
+  if (editingQuizId) {
+    return (
+      <section className="data-section">
+        <QuizBuilder
+          token={token}
+          quizId={editingQuizId}
+          onBack={async () => {
+            setEditingQuizId(null);
+            await load();
+          }}
+        />
       </section>
     );
   }
@@ -420,6 +423,9 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
               <button className="secondary-button" disabled={busy} onClick={() => void addLesson(module.id)} type="button">
                 <FilePlus2 aria-hidden /> Clase
               </button>
+              <button className="secondary-button" disabled={busy} onClick={() => void addQuiz(module.id)} type="button">
+                <ClipboardList aria-hidden /> Examen
+              </button>
               <button className="icon-button" disabled={busy} onClick={() => void removeModule(module.id)} title="Eliminar sección" type="button">
                 <Trash2 aria-hidden />
               </button>
@@ -433,7 +439,13 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
             ))
           )}
           {module.quizzes.length > 0 ? (
-            <p className="muted"><small>{module.quizzes.length} examen(es) en esta sección — edición de exámenes próximamente.</small></p>
+            <div className="quiz-list">
+              {module.quizzes.map((quiz) => (
+                <button key={quiz.id} className="quiz-list-item" onClick={() => setEditingQuizId(quiz.id)} type="button">
+                  <ClipboardList aria-hidden /> {quiz.title}
+                </button>
+              ))}
+            </div>
           ) : null}
         </div>
       ))}
