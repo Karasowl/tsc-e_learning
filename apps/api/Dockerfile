@@ -18,12 +18,18 @@ RUN pnpm --filter @tsc-capacita/api build
 
 FROM base AS runner
 ENV NODE_ENV=production
+# Root node_modules holds the pnpm .pnpm store; the per-package node_modules hold
+# the symlinks that resolve bare imports (e.g. @fastify/cors) and the workspace
+# packages. All are needed for ESM resolution at runtime under pnpm.
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages/db/dist ./packages/db/dist
+COPY --from=build /app/packages/db/node_modules ./packages/db/node_modules
 COPY --from=build /app/packages/db/package.json ./packages/db/package.json
 COPY --from=build /app/packages/wp-compat/dist ./packages/wp-compat/dist
+COPY --from=build /app/packages/wp-compat/node_modules ./packages/wp-compat/node_modules
 COPY --from=build /app/packages/wp-compat/package.json ./packages/wp-compat/package.json
 COPY --from=build /app/apps/api/dist ./apps/api/dist
+COPY --from=build /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /app/apps/api/assets ./apps/api/assets
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
 WORKDIR /app/apps/api
