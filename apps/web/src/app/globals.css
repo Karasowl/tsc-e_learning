@@ -1062,6 +1062,136 @@ label textarea {
   min-height: 28px;
 }
 
+/* Reviews + instructor directory */
+.reviews {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.reviews-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rating-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.stars {
+  display: inline-flex;
+}
+
+.stars svg {
+  width: 15px;
+  height: 15px;
+}
+
+.stars svg.on {
+  color: #e0a106;
+  fill: #e0a106;
+}
+
+.stars svg.off {
+  color: var(--line-strong);
+}
+
+.review-form {
+  display: grid;
+  gap: 8px;
+}
+
+.star-input {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.star-button {
+  background: none;
+  border: 0;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--line-strong);
+}
+
+.star-button svg {
+  width: 22px;
+  height: 22px;
+}
+
+.star-button.on {
+  color: #e0a106;
+}
+
+.star-button.on svg {
+  fill: #e0a106;
+}
+
+.review-list {
+  display: grid;
+  gap: 10px;
+}
+
+.review-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.review-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-item-head svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+
+.review-item p {
+  margin: 6px 0 0;
+}
+
+.teacher-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.teacher-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.teacher-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.teacher-card-head svg {
+  width: 24px;
+  height: 24px;
+  color: var(--brand);
+}
+
+.teacher-card ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
 @media (max-width: 1180px) {
   .course-workspace,
   .learning-layout,

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AuthoringView } from "./authoring";
+import { CompletedCourses, CourseReviews, TeachersDirectory } from "./panels";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -179,7 +180,7 @@ type NotificationLog = {
 
 type AnswerState = Record<string, { selectedOptionIds: string[]; text: string }>;
 
-type View = "courses" | "manage" | "report" | "certificates" | "notifications";
+type View = "courses" | "manage" | "report" | "certificates" | "notifications" | "teachers" | "completed";
 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
@@ -595,6 +596,12 @@ export default function Home() {
             <NavButton active={view === "report"} icon={<BarChart3 aria-hidden />} label="Reporte" onClick={() => setView("report")} />
           ) : null}
           <NavButton active={view === "certificates"} icon={<Award aria-hidden />} label="Diplomas" onClick={() => setView("certificates")} />
+          {!isPrivileged ? (
+            <NavButton active={view === "completed"} icon={<GraduationCap aria-hidden />} label="Aprobados" onClick={() => setView("completed")} />
+          ) : null}
+          {isPrivileged ? (
+            <NavButton active={view === "teachers"} icon={<UserRound aria-hidden />} label="Instructores" onClick={() => setView("teachers")} />
+          ) : null}
           {isAdmin ? (
             <NavButton
               active={view === "notifications"}
@@ -715,6 +722,8 @@ export default function Home() {
                       Emitir diploma
                     </button>
                   ) : null}
+
+                  {token ? <CourseReviews token={token} courseId={selectedCourse.id} /> : null}
                 </>
               ) : (
                 <p className="empty-state">Selecciona un curso para ver su contenido.</p>
@@ -726,6 +735,10 @@ export default function Home() {
         {view === "manage" && isPrivileged && token ? (
           <AuthoringView token={token} isAdmin={Boolean(isAdmin)} />
         ) : null}
+
+        {view === "teachers" && isPrivileged && token ? <TeachersDirectory token={token} /> : null}
+
+        {view === "completed" && token ? <CompletedCourses token={token} /> : null}
 
         {view === "report" && isPrivileged ? (
           <section className="data-section">
