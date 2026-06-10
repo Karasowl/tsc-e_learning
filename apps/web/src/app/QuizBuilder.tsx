@@ -322,7 +322,50 @@ function QuestionForm({
     return base;
   }
 
+  function validateQuestion(): string | null {
+    if (!prompt.trim()) {
+      return "Escribe el enunciado de la pregunta.";
+    }
+    if (type === "SINGLE_CHOICE") {
+      if (rows.filter((row) => row.value.trim()).length < 2) {
+        return "Agrega al menos dos opciones.";
+      }
+      if (correctIndex < 0 || correctIndex >= rows.length || !rows[correctIndex]?.value.trim()) {
+        return "Marca la opción correcta.";
+      }
+    }
+    if (type === "MULTIPLE_CHOICE") {
+      if (rows.filter((row) => row.value.trim()).length < 2) {
+        return "Agrega al menos dos opciones.";
+      }
+      if (!rows.some((row, index) => correctSet.has(index) && row.value.trim())) {
+        return "Marca al menos una opción correcta.";
+      }
+    }
+    if (type === "FILL_IN_THE_BLANK" || type === "SHORT_TEXT") {
+      if (!rows.some((row) => row.value.trim())) {
+        return "Agrega al menos una respuesta aceptada.";
+      }
+    }
+    if (type === "MATCHING") {
+      if (rows.filter((row) => row.value.trim() && (row.gapMatch ?? "").trim()).length < 2) {
+        return "Agrega al menos dos pares (término y coincidencia).";
+      }
+    }
+    if (type === "ORDERING") {
+      if (rows.filter((row) => row.value.trim()).length < 2) {
+        return "Agrega al menos dos elementos para ordenar.";
+      }
+    }
+    return null;
+  }
+
   async function save() {
+    const validationError = validateQuestion();
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {

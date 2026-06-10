@@ -243,7 +243,7 @@ export function UsersRolesAdmin({ token, currentUserId }: { token: string; curre
           </label>
           <label>
             Contraseña
-            <input name="password" type="text" placeholder="mínimo 6 caracteres" required />
+            <input name="password" type="password" autoComplete="new-password" placeholder="mínimo 6 caracteres" required />
           </label>
           <label>
             Rol

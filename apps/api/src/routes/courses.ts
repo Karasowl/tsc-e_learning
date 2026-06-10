@@ -228,6 +228,10 @@ export async function registerCourseRoutes(server: FastifyInstance) {
       return reply.code(403).send({ error: "Course access denied" });
     }
 
+    if (lesson.course.status === "ARCHIVED") {
+      return reply.code(409).send({ error: "El curso está archivado" });
+    }
+
     const completedAt = new Date();
     const progress = await getPrisma().lessonProgress.upsert({
       where: {

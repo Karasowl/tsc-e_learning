@@ -689,7 +689,7 @@ function EnrollmentManager({ token, courseId }: { token: string; courseId: strin
           </label>
           <label>
             Contraseña
-            <input name="password" type="text" placeholder="mínimo 6 caracteres" required />
+            <input name="password" type="password" autoComplete="new-password" placeholder="mínimo 6 caracteres" required />
           </label>
           <button className="primary-button" disabled={busy} type="submit">
             <GraduationCap aria-hidden /> Crear y dar acceso

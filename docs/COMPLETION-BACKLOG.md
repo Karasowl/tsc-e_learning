@@ -80,16 +80,17 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [~] (menor) paginación de la tabla de usuarios (hoy máx 200 con búsqueda/rol server-side) — diferido; charts del dashboard → diferidos (sin lib de gráficas).
 - [ ] (Opcional) Audit log de acciones admin — diferido (no era requisito).
 
-### M8 — Autoría (pulido de profesor)  ⬜
-- [ ] **Drag-and-drop** para reordenar módulos/clases/preguntas.
+### M8 — Autoría (pulido de profesor)  ⏳ EN CURSO
+- [x] Password al crear estudiante/usuario como `type="password"` (antes texto visible).
+- [x] **Validación del constructor de exámenes**: no guardar opción única/múltiple sin respuesta correcta; mínimos por tipo (completar/enlazar/ordenar); enunciado obligatorio.
+- [ ] **Drag-and-drop** para reordenar módulos/clases/preguntas. (L)
 - [ ] Guard de cambios sin guardar a nivel **curso** (hoy solo el LessonModal) + autosave.
-- [ ] Password al crear estudiante/usuario como `type="password"` + generador/medidor.
-- [ ] Vista previa del examen como alumno; validación (no guardar single-choice sin correcta).
-- [ ] (Opcional) Reemplazar `RichTextEditor` (execCommand deprecado) por editor moderno (Tiptap/Lexical) con sanitización.
+- [ ] Vista previa del examen como alumno.
+- [ ] (Opcional) Reemplazar `RichTextEditor` (execCommand) por editor moderno (Tiptap/Lexical). (L)
 
 ### M9 — Robustez de dominio  ⏳ EN CURSO
 - [x] **Completar curso exige aprobar los exámenes publicados** además de las lecciones (`updateCourseProgress`); no degrada ni borra los completados migrados (preserva `completedAt`/status). Aviso al estudiante "Aprueba el examen para obtener tu diploma". Desplegado.
-- [ ] No marcar progreso en cursos `ARCHIVED`.
+- [x] No marcar progreso en cursos `ARCHIVED` (409 en `POST /lessons/:id/complete`).
 - [ ] Flujo de calificación manual de `OPEN_ENDED`/`SHORT_TEXT` (o excluirlos del builder si no se usan en prod — solo se usaban 3 tipos).
 - [ ] Reanudar curso: exponer "última lección vista" (`lastSeenAt`).
 
