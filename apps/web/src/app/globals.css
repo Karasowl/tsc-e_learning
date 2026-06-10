@@ -2206,10 +2206,62 @@ label textarea {
   font-size: var(--text-sm);
 }
 
-.profile-logout {
+.profile-logout,
+.profile-link {
   justify-content: flex-start;
   width: 100%;
   border: 1px solid var(--line);
+}
+
+/* ===== Mi perfil ===== */
+.profile-view {
+  display: grid;
+  gap: var(--space-16);
+  max-width: 680px;
+}
+
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.avatar.xl {
+  width: 64px;
+  height: 64px;
+  font-size: var(--text-xl);
+}
+
+.profile-hero h2 {
+  margin-bottom: 2px;
+}
+
+.profile-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-12);
+  margin: var(--space-16) 0 0;
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.profile-meta dt {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.profile-meta dd {
+  margin: 2px 0 0;
+  font-weight: var(--weight-semibold);
+}
+
+.profile-form {
+  display: grid;
+  gap: var(--space-16);
+  max-width: 420px;
+  margin-top: var(--space-12);
 }
 
 .menu-backdrop {

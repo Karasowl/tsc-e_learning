@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Award, GraduationCap, Star, UserRound } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
+import { Award, GraduationCap, Save, Star, UserRound } from "lucide-react";
 import { authFetch, errorText } from "./apiClient";
+import { toast } from "./ui";
 
 type Review = { rating: number | null; body: string | null; authorName: string; createdAt: string };
 
@@ -164,6 +165,244 @@ type CompletedItem = {
   completedAt: string | null;
   progressPercent: number | null;
 };
+
+type MeProfile = {
+  id: string;
+  email: string;
+  displayName: string;
+  serviceLabel: string | null;
+  status: string;
+  roles: string[];
+  lastLoginAt: string | null;
+  createdAt: string | null;
+};
+
+function roleEs(role: string) {
+  return role === "ADMIN"
+    ? "Administrador"
+    : role === "TEACHER"
+      ? "Instructor"
+      : role === "STUDENT"
+        ? "Colaborador"
+        : role;
+}
+
+function profileInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return "?";
+  }
+  if (parts.length === 1) {
+    return parts[0]!.slice(0, 2).toUpperCase();
+  }
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
+
+export function ProfileView({
+  token,
+  onProfileUpdated
+}: {
+  token: string;
+  onProfileUpdated: (displayName: string) => void;
+}) {
+  const [me, setMe] = useState<MeProfile | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [serviceLabel, setServiceLabel] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    authFetch<{ user: MeProfile }>(token, "/me")
+      .then((data) => {
+        if (!active) {
+          return;
+        }
+        setMe(data.user);
+        setDisplayName(data.user.displayName);
+        setServiceLabel(data.user.serviceLabel ?? "");
+      })
+      .catch((loadError) => {
+        if (active) {
+          setError(errorText(loadError));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!displayName.trim()) {
+      setError("El nombre no puede estar vacío.");
+      return;
+    }
+    setSavingProfile(true);
+    setError(null);
+    try {
+      const data = await authFetch<{ user: MeProfile }>(token, "/me", {
+        method: "PUT",
+        body: JSON.stringify({ displayName: displayName.trim(), serviceLabel: serviceLabel.trim() || null })
+      });
+      setMe((current) =>
+        current ? { ...current, displayName: data.user.displayName, serviceLabel: data.user.serviceLabel } : current
+      );
+      onProfileUpdated(data.user.displayName);
+      toast.success("Perfil actualizado.");
+    } catch (saveError) {
+      const message = errorText(saveError);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function savePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newPassword.length < 8) {
+      toast.error("La nueva contraseña debe tener al menos 8 caracteres.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("La confirmación no coincide.");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      await authFetch(token, "/me/password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      toast.success("Contraseña actualizada.");
+    } catch (saveError) {
+      toast.error(errorText(saveError));
+    } finally {
+      setSavingPassword(false);
+    }
+  }
+
+  if (!me) {
+    return (
+      <section className="data-section">
+        <p className="empty-state">{error ?? "Cargando…"}</p>
+      </section>
+    );
+  }
+
+  return (
+    <div className="profile-view">
+      <section className="data-section">
+        <div className="profile-hero">
+          <span className="avatar xl" aria-hidden>
+            {profileInitials(me.displayName)}
+          </span>
+          <div>
+            <h2>{me.displayName}</h2>
+            <p className="muted">{me.email}</p>
+            <div className="role-chips">
+              {me.roles.map((role) => (
+                <span className="role-chip" key={role}>
+                  {roleEs(role)}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+        <dl className="profile-meta">
+          {me.serviceLabel ? (
+            <div>
+              <dt>Servicio</dt>
+              <dd>{me.serviceLabel}</dd>
+            </div>
+          ) : null}
+          {me.lastLoginAt ? (
+            <div>
+              <dt>Último acceso</dt>
+              <dd>{new Date(me.lastLoginAt).toLocaleString("es-MX")}</dd>
+            </div>
+          ) : null}
+          {me.createdAt ? (
+            <div>
+              <dt>Miembro desde</dt>
+              <dd>{new Date(me.createdAt).toLocaleDateString("es-MX")}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </section>
+
+      <section className="data-section">
+        <h2>Editar perfil</h2>
+        <form className="profile-form" onSubmit={saveProfile}>
+          <label>
+            Nombre
+            <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+          </label>
+          <label>
+            Servicio / empresa
+            <input
+              value={serviceLabel}
+              onChange={(event) => setServiceLabel(event.target.value)}
+              placeholder="Opcional"
+            />
+          </label>
+          {error ? <p className="error-line">{error}</p> : null}
+          <button className="primary-button" disabled={savingProfile} type="submit">
+            <Save aria-hidden /> Guardar cambios
+          </button>
+        </form>
+      </section>
+
+      <section className="data-section">
+        <h2>Cambiar contraseña</h2>
+        <form className="profile-form" onSubmit={savePassword}>
+          <label>
+            Contraseña actual
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              autoComplete="current-password"
+            />
+          </label>
+          <label>
+            Nueva contraseña
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              autoComplete="new-password"
+            />
+          </label>
+          <label>
+            Confirmar nueva contraseña
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              autoComplete="new-password"
+            />
+          </label>
+          <button
+            className="primary-button"
+            disabled={savingPassword || !currentPassword || !newPassword}
+            type="submit"
+          >
+            <Save aria-hidden /> Actualizar contraseña
+          </button>
+        </form>
+      </section>
+    </div>
+  );
+}
 
 export function CompletedCourses({ token }: { token: string }) {
   const [items, setItems] = useState<CompletedItem[]>([]);

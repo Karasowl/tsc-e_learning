@@ -56,11 +56,12 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [x] Auditoría completa del frontend: el resto ya estaba en español — resultado de quiz (M3 `QuizResult`), summary del reporte (claves ya en español desde el backend), `StatusTag`/`EnrollStatusTag`/`statusEs` (cursos/inscripción/usuarios), selects de estado con opciones en español. No quedan enums crudos visibles.
 - [~] (Opcional, sin impacto visible) unificar `StatusPill`/`StatusTag`/`EnrollStatusTag` en un componente — los 3 ya producen español correcto; se deja como limpieza futura de bajo valor.
 
-### M5 — Autenticación y cuenta (esenciales modernos)  ⬜
-- [ ] **Perfil de usuario** self-service: `GET/PUT /me` + pantalla (datos, foto/iniciales, etiqueta servicio).
-- [ ] **Cambio de contraseña** propio + **reset por admin**.
-- [ ] **Recuperar contraseña** (forgot/reset por email con token) — usando el worker SMTP/Resend.
-- [ ] **Login con Google** (OAuth/OIDC) — credenciales del cliente en `.env` (NO en repo). Vincular por email.
+### M5 — Autenticación y cuenta (esenciales modernos)  ⏳ EN CURSO
+- [x] **Perfil self-service**: backend `GET/PUT /me` (`apps/api/src/routes/account.ts`) + pantalla "Mi perfil" (avatar de iniciales, email, roles, servicio, último acceso/alta) con edición de nombre+servicio. Verificado en prod.
+- [x] **Cambio de contraseña propio**: `POST /me/password` (verifica la actual con wp-compat) + formulario en "Mi perfil".
+- [x] **Reset por admin (backend)**: `POST /admin/users/:userId/password` (isAdmin). Falta UI en usersAdmin (modal con input) — pendiente menor.
+- [ ] **Recuperar contraseña** (forgot/reset por email con token) — depende de SMTP/Resend (M10).
+- [ ] **Login con Google** (OAuth/OIDC) — credenciales del cliente en `.env` del VPS (NO en repo). Vincular por email.
 
 ### M6 — Seguridad (endurecimiento)  ⬜
 - [ ] JWT con **caducidad** (`expiresIn`) + revalidar `User.status`/roles vivos por request (hoy roles "horneados" persisten tras revocar/suspender).

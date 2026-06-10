@@ -26,7 +26,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import DOMPurify from "dompurify";
 import { assetFileUrl } from "./apiClient";
 import { AuthoringView } from "./authoring";
-import { CompletedCourses, CourseReviews, TeachersDirectory } from "./panels";
+import { CompletedCourses, CourseReviews, ProfileView, TeachersDirectory } from "./panels";
 import { UsersRolesAdmin } from "./usersAdmin";
 import { CardSkeletonGrid } from "./ui";
 
@@ -192,7 +192,7 @@ type AnswerState = Record<
   { selectedOptionIds: string[]; text: string; matches?: Record<string, string>; order?: string[] }
 >;
 
-type View = "courses" | "manage" | "report" | "certificates" | "notifications" | "teachers" | "completed" | "users";
+type View = "courses" | "manage" | "report" | "certificates" | "notifications" | "teachers" | "completed" | "users" | "profile";
 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
@@ -602,6 +602,17 @@ export default function Home() {
     }
   }
 
+  function updateDisplayName(displayName: string) {
+    setUser((current) => {
+      if (!current) {
+        return current;
+      }
+      const next = { ...current, displayName };
+      window.localStorage.setItem("tsc_user", JSON.stringify(next));
+      return next;
+    });
+  }
+
   function logout() {
     window.localStorage.removeItem("tsc_token");
     window.localStorage.removeItem("tsc_user");
@@ -753,6 +764,17 @@ export default function Home() {
                     </div>
                   </div>
                   <p className="profile-roles">{user.roles.map(roleLabel).join(" · ")}</p>
+                  <button
+                    className="ghost-button profile-link"
+                    onClick={() => {
+                      setView("profile");
+                      setProfileOpen(false);
+                    }}
+                    type="button"
+                  >
+                    <UserRound aria-hidden />
+                    Mi perfil
+                  </button>
                   <button className="ghost-button profile-logout" onClick={logout} type="button">
                     <LogOut aria-hidden />
                     Salir
@@ -962,6 +984,8 @@ export default function Home() {
         {view === "users" && isAdmin && token && user ? <UsersRolesAdmin token={token} currentUserId={user.id} /> : null}
 
         {view === "completed" && token ? <CompletedCourses token={token} /> : null}
+
+        {view === "profile" && token ? <ProfileView token={token} onProfileUpdated={updateDisplayName} /> : null}
 
         {view === "report" && isPrivileged ? (
           <section className="data-section">
@@ -1530,6 +1554,8 @@ function sectionTitle(view: View) {
       return "Cursos aprobados";
     case "notifications":
       return "Notificaciones";
+    case "profile":
+      return "Mi perfil";
     case "courses":
     default:
       return "Cursos inscritos";

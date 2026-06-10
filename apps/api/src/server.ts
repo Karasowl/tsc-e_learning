@@ -4,6 +4,7 @@ import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import type { AppConfig } from "./lib/config.js";
 import { startNotificationWorker } from "./lib/notifications-worker.js";
+import { registerAccountRoutes } from "./routes/account.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerCertificateRoutes } from "./routes/certificates.js";
@@ -69,6 +70,7 @@ export async function buildServer(config: AppConfig) {
     }
   });
 
+  await registerAccountRoutes(server);
   await registerAssetRoutes(server, config);
   await registerAuthRoutes(server);
   await registerCertificateRoutes(server, config);
