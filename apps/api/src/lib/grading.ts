@@ -104,7 +104,10 @@ function isQuestionCorrect(
     case "SINGLE_CHOICE":
     case "TRUE_FALSE":
       return selectedOptionIds.length === 1 && correctOptionIds(question).includes(selectedOptionIds[0]!);
+    // SHORT_TEXT is graded like a blank: the teacher stores the accepted
+    // answer(s) and we compare the normalized text.
     case "FILL_IN_THE_BLANK":
+    case "SHORT_TEXT":
       return text !== null && acceptedFillAnswers(question).includes(normalizeText(text));
     case "ORDERING":
       return isOrderingCorrect(question, selectedOptionIds);

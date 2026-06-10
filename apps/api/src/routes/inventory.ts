@@ -1,6 +1,7 @@
 import { getPrisma } from "@tsc-capacita/db";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { isAdmin, requireAuth } from "../lib/auth.js";
 
 const createEvidenceSchema = z.object({
   area: z.string().min(1),
@@ -20,6 +21,14 @@ export async function registerInventoryRoutes(server: FastifyInstance) {
   });
 
   server.post("/inventory/features", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+    if (!isAdmin(auth)) {
+      return reply.code(403).send({ error: "Admin role required" });
+    }
+
     const parsed = createEvidenceSchema.safeParse(request.body);
 
     if (!parsed.success) {

@@ -22,8 +22,24 @@ export async function authFetch<T>(token: string, path: string, init: RequestIni
   return response.json() as Promise<T>;
 }
 
-export async function uploadAsset(token: string, file: File): Promise<{ id: string }> {
+export type UploadedAsset = {
+  id: string;
+  title: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+};
+
+export async function uploadAsset(
+  token: string,
+  file: File,
+  opts: { lessonId?: string } = {}
+): Promise<UploadedAsset> {
   const form = new FormData();
+  // The lessonId must be appended BEFORE the file so the server sees it while
+  // streaming the multipart body.
+  if (opts.lessonId) {
+    form.append("lessonId", opts.lessonId);
+  }
   form.append("file", file);
   const response = await fetch(`${API_URL}/assets`, {
     method: "POST",
@@ -33,7 +49,7 @@ export async function uploadAsset(token: string, file: File): Promise<{ id: stri
   if (!response.ok) {
     throw new Error("No se pudo subir el archivo");
   }
-  const data = (await response.json()) as { asset: { id: string } };
+  const data = (await response.json()) as { asset: UploadedAsset };
   return data.asset;
 }
 

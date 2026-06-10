@@ -10,6 +10,7 @@ import { registerCertificateRoutes } from "./routes/certificates.js";
 import { registerCourseAdminRoutes } from "./routes/courses-admin.js";
 import { registerCourseRoutes } from "./routes/courses.js";
 import { registerDirectoryRoutes } from "./routes/directory.js";
+import { registerEnrollmentAdminRoutes } from "./routes/enrollments-admin.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerInventoryRoutes } from "./routes/inventory.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
@@ -17,6 +18,7 @@ import { registerQuizAdminRoutes } from "./routes/quizzes-admin.js";
 import { registerQuizRoutes } from "./routes/quizzes.js";
 import { registerReportRoutes } from "./routes/reports.js";
 import { registerReviewRoutes } from "./routes/reviews.js";
+import { registerUserAdminRoutes } from "./routes/users-admin.js";
 
 export async function buildServer(config: AppConfig) {
   const allowedOrigins = new Set<string>([config.webPublicUrl, ...config.corsOrigins]);
@@ -48,6 +50,12 @@ export async function buildServer(config: AppConfig) {
       }
       callback(null, false);
     },
+    // @fastify/cors v11 defaults to "GET,HEAD,POST" only. The authoring console
+    // relies on PUT/PATCH/DELETE (save cover, publish course, edit lessons,
+    // delete), so they must be declared explicitly or the browser preflight
+    // rejects them ("Method PUT is not allowed by Access-Control-Allow-Methods").
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
   });
 
@@ -67,6 +75,7 @@ export async function buildServer(config: AppConfig) {
   await registerCourseAdminRoutes(server);
   await registerCourseRoutes(server);
   await registerDirectoryRoutes(server);
+  await registerEnrollmentAdminRoutes(server);
   await registerHealthRoutes(server);
   await registerInventoryRoutes(server);
   await registerNotificationRoutes(server, config);
@@ -74,6 +83,7 @@ export async function buildServer(config: AppConfig) {
   await registerQuizRoutes(server);
   await registerReportRoutes(server);
   await registerReviewRoutes(server);
+  await registerUserAdminRoutes(server);
 
   const notificationWorker = startNotificationWorker(config, server.log);
   server.addHook("onClose", async () => {

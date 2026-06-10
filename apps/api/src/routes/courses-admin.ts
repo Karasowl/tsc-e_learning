@@ -18,21 +18,21 @@ const lessonIdSchema = z.object({
 
 const createCourseSchema = z.object({
   title: z.string().min(1),
-  description: z.string().optional(),
-  excerpt: z.string().optional(),
-  level: z.string().optional(),
+  description: z.string().nullable().optional(),
+  excerpt: z.string().nullable().optional(),
+  level: z.string().nullable().optional(),
   status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).optional(),
-  thumbnailAssetId: z.string().optional(),
+  thumbnailAssetId: z.string().nullable().optional(),
   teacherId: z.string().optional()
 });
 
 const updateCourseSchema = z.object({
   title: z.string().min(1).optional(),
-  description: z.string().optional(),
-  excerpt: z.string().optional(),
-  level: z.string().optional(),
+  description: z.string().nullable().optional(),
+  excerpt: z.string().nullable().optional(),
+  level: z.string().nullable().optional(),
   status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).optional(),
-  thumbnailAssetId: z.string().optional(),
+  thumbnailAssetId: z.string().nullable().optional(),
   teacherId: z.string().optional()
 });
 
@@ -50,9 +50,9 @@ const createLessonSchema = z.object({
   title: z.string().min(1),
   moduleId: z.string().optional(),
   kind: z.enum(["TEXT", "VIDEO", "RESOURCE", "MIXED"]).optional(),
-  body: z.string().optional(),
-  videoUrl: z.string().optional(),
-  videoProvider: z.string().optional(),
+  body: z.string().nullable().optional(),
+  videoUrl: z.string().nullable().optional(),
+  videoProvider: z.string().nullable().optional(),
   position: z.number().int().optional()
 });
 
@@ -60,9 +60,9 @@ const updateLessonSchema = z.object({
   title: z.string().min(1).optional(),
   moduleId: z.string().optional(),
   kind: z.enum(["TEXT", "VIDEO", "RESOURCE", "MIXED"]).optional(),
-  body: z.string().optional(),
-  videoUrl: z.string().optional(),
-  videoProvider: z.string().optional(),
+  body: z.string().nullable().optional(),
+  videoUrl: z.string().nullable().optional(),
+  videoProvider: z.string().nullable().optional(),
   position: z.number().int().optional()
 });
 
@@ -548,7 +548,10 @@ async function uniqueLessonSlug(courseId: string, title: string) {
   return candidate;
 }
 
-function resolveVideoProvider(videoUrl: string | undefined, videoProvider: string | undefined) {
+function resolveVideoProvider(
+  videoUrl: string | null | undefined,
+  videoProvider: string | null | undefined
+) {
   if (videoUrl && videoUrl.toLowerCase().includes("youtube")) {
     return "youtube";
   }

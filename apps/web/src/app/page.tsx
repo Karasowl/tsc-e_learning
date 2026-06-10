@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowLeft,
   Award,
   BarChart3,
   Bell,
@@ -20,8 +21,10 @@ import {
   UserRound
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { assetFileUrl } from "./apiClient";
 import { AuthoringView } from "./authoring";
 import { CompletedCourses, CourseReviews, TeachersDirectory } from "./panels";
+import { UsersRolesAdmin } from "./usersAdmin";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -39,6 +42,7 @@ type CourseSummary = {
   excerpt: string | null;
   status: string;
   teacher: { displayName: string } | null;
+  thumbnail: { id: string } | null;
   enrolled: boolean;
   progressPercent: number | null;
   counts: {
@@ -184,7 +188,7 @@ type AnswerState = Record<
   { selectedOptionIds: string[]; text: string; matches?: Record<string, string>; order?: string[] }
 >;
 
-type View = "courses" | "manage" | "report" | "certificates" | "notifications" | "teachers" | "completed";
+type View = "courses" | "manage" | "report" | "certificates" | "notifications" | "teachers" | "completed" | "users";
 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
@@ -205,6 +209,10 @@ export default function Home() {
 
   const isPrivileged = user?.roles.includes("ADMIN") || user?.roles.includes("TEACHER");
   const isAdmin = user?.roles.includes("ADMIN");
+  // The learner view ("Cursos inscritos" / "Aprobados") is for students. An ADMIN
+  // never sees it (they run the platform); but a TEACHER who is also enrolled as a
+  // student still gets it, so multi-role users aren't locked out of their courses.
+  const canLearn = Boolean(user?.roles.includes("STUDENT") && !isAdmin);
   const activeLesson = useMemo(() => {
     if (!selectedCourse) {
       return null;
@@ -227,6 +235,15 @@ export default function Home() {
     }
     void loadInitialData(token);
   }, [token]);
+
+  // Land each role on the right home: admins/teachers manage the platform, students learn.
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    const privileged = user.roles.includes("ADMIN") || user.roles.includes("TEACHER");
+    setView(privileged ? "manage" : "courses");
+  }, [user]);
 
   async function api<T>(path: string, init: RequestInit = {}) {
     const response = await fetch(`${API_URL}${path}`, {
@@ -255,9 +272,6 @@ export default function Home() {
     try {
       const coursePayload = await api<{ courses: CourseSummary[] }>("/courses");
       setCourses(coursePayload.courses);
-      if (coursePayload.courses[0]) {
-        await loadCourse(coursePayload.courses[0].id);
-      }
       await loadCertificates();
       if (isPrivileged) {
         await loadReport();
@@ -607,19 +621,24 @@ export default function Home() {
           </div>
         </div>
         <nav className="nav-stack" aria-label="Secciones">
-          <NavButton active={view === "courses"} icon={<BookOpen aria-hidden />} label="Cursos" onClick={() => setView("courses")} />
+          {canLearn ? (
+            <NavButton active={view === "courses"} icon={<BookOpen aria-hidden />} label="Cursos inscritos" onClick={() => setView("courses")} />
+          ) : null}
           {isPrivileged ? (
             <NavButton active={view === "manage"} icon={<Boxes aria-hidden />} label="Gestionar cursos" onClick={() => setView("manage")} />
           ) : null}
           {isPrivileged ? (
             <NavButton active={view === "report"} icon={<BarChart3 aria-hidden />} label="Reporte" onClick={() => setView("report")} />
           ) : null}
-          <NavButton active={view === "certificates"} icon={<Award aria-hidden />} label="Diplomas" onClick={() => setView("certificates")} />
-          {!isPrivileged ? (
-            <NavButton active={view === "completed"} icon={<GraduationCap aria-hidden />} label="Aprobados" onClick={() => setView("completed")} />
-          ) : null}
           {isPrivileged ? (
             <NavButton active={view === "teachers"} icon={<UserRound aria-hidden />} label="Instructores" onClick={() => setView("teachers")} />
+          ) : null}
+          {isAdmin ? (
+            <NavButton active={view === "users"} icon={<ShieldCheck aria-hidden />} label="Usuarios y roles" onClick={() => setView("users")} />
+          ) : null}
+          <NavButton active={view === "certificates"} icon={<Award aria-hidden />} label="Diplomas" onClick={() => setView("certificates")} />
+          {canLearn ? (
+            <NavButton active={view === "completed"} icon={<GraduationCap aria-hidden />} label="Aprobados" onClick={() => setView("completed")} />
           ) : null}
           {isAdmin ? (
             <NavButton
@@ -650,37 +669,14 @@ export default function Home() {
 
         {error ? <div className="error-banner">{error}</div> : null}
 
-        {view === "courses" ? (
-          <section className="course-workspace">
-            <div className="course-list" aria-label="Cursos">
+        {view === "courses" && canLearn ? (
+          selectedCourse ? (
+            <section className="learner-detail">
               <div className="section-header">
-                <h2>Cursos inscritos</h2>
-                <button className="icon-button" disabled={busy} onClick={() => loadInitialData()} title="Actualizar" type="button">
-                  <RefreshCw aria-hidden />
+                <button className="ghost-button" onClick={() => setSelectedCourse(null)} type="button">
+                  <ArrowLeft aria-hidden /> Volver al catálogo
                 </button>
               </div>
-              {courses.map((course) => (
-                <button
-                  className={`course-row ${selectedCourse?.id === course.id ? "active" : ""}`}
-                  key={course.id}
-                  onClick={() => loadCourse(course.id)}
-                  type="button"
-                >
-                  <span>
-                    <strong>{course.title}</strong>
-                    <small>
-                      {course.counts.lessons} lecciones · {course.counts.quizzes} exámenes
-                    </small>
-                  </span>
-                  <ProgressBar value={course.progressPercent ?? 0} />
-                </button>
-              ))}
-              {courses.length === 0 ? <p className="empty-state">No hay cursos visibles para este usuario.</p> : null}
-            </div>
-
-            <div className="course-detail">
-              {selectedCourse ? (
-                <>
                   <div className="course-title-row">
                     <div>
                       <p className="eyebrow">{selectedCourse.teacher?.displayName ?? "TSC Capacitación"}</p>
@@ -743,12 +739,50 @@ export default function Home() {
                   ) : null}
 
                   {token ? <CourseReviews token={token} courseId={selectedCourse.id} /> : null}
-                </>
-              ) : (
-                <p className="empty-state">Selecciona un curso para ver su contenido.</p>
-              )}
-            </div>
-          </section>
+            </section>
+          ) : (
+            <section className="data-section">
+              <div className="section-header">
+                <h2>Cursos inscritos</h2>
+                <button className="icon-button" disabled={busy} onClick={() => loadInitialData()} title="Actualizar" type="button">
+                  <RefreshCw aria-hidden />
+                </button>
+              </div>
+              <div className="catalog-grid">
+                {courses.map((course) => (
+                  <button className="course-card" key={course.id} onClick={() => loadCourse(course.id)} type="button">
+                    <div className="course-card-cover">
+                      {course.thumbnail ? (
+                        <img
+                          src={assetFileUrl(course.thumbnail.id)}
+                          alt=""
+                          onError={(event) => {
+                            event.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <BookOpen aria-hidden />
+                      )}
+                    </div>
+                    <div className="course-card-body">
+                      <strong>{course.title}</strong>
+                      <small className="muted">{course.teacher?.displayName ?? "TSC Capacitación"}</small>
+                      <small className="muted">
+                        {course.counts.lessons} lecciones · {course.counts.quizzes} exámenes
+                      </small>
+                      <div className="course-card-progress">
+                        <ProgressBar value={course.progressPercent ?? 0} />
+                        <span>{Math.round(course.progressPercent ?? 0)}%</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+                {courses.length === 0 ? (
+                  <p className="empty-state">Aún no tienes cursos asignados. Pídele acceso a tu administrador.</p>
+                ) : null}
+              </div>
+            </section>
+          )
         ) : null}
 
         {view === "manage" && isPrivileged && token ? (
@@ -756,6 +790,8 @@ export default function Home() {
         ) : null}
 
         {view === "teachers" && isPrivileged && token ? <TeachersDirectory token={token} /> : null}
+
+        {view === "users" && isAdmin && token && user ? <UsersRolesAdmin token={token} currentUserId={user.id} /> : null}
 
         {view === "completed" && token ? <CompletedCourses token={token} /> : null}
 
@@ -1207,15 +1243,23 @@ function roleLabel(role: string) {
 
 function sectionTitle(view: View) {
   switch (view) {
+    case "manage":
+      return "Gestionar cursos";
     case "report":
       return "Reporte de colaboradores";
+    case "teachers":
+      return "Instructores";
+    case "users":
+      return "Usuarios y roles";
     case "certificates":
       return "Diplomas";
+    case "completed":
+      return "Cursos aprobados";
     case "notifications":
       return "Notificaciones";
     case "courses":
     default:
-      return "Cursos";
+      return "Cursos inscritos";
   }
 }
 
