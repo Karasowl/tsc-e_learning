@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSyncExternalStore } from "react";
 import { X } from "lucide-react";
 
@@ -162,6 +162,113 @@ export function ConfirmHost() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Prompt dialog — input de una línea con estilo de marca.
+   Uso: const value = await promptDialog({ title, inputType: "password" });
+   value === null si se cancela. Montar <PromptHost /> una vez.
+   ============================================================ */
+type PromptOptions = {
+  title: string;
+  message?: string;
+  label?: string;
+  placeholder?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  inputType?: "text" | "password";
+  initialValue?: string;
+};
+type PromptState = (PromptOptions & { id: number; resolve: (value: string | null) => void }) | null;
+
+let promptState: PromptState = null;
+const promptListeners = new Set<() => void>();
+let nextPromptId = 0;
+
+function emitPrompt() {
+  for (const listener of promptListeners) listener();
+}
+
+function subscribePrompt(callback: () => void) {
+  promptListeners.add(callback);
+  return () => {
+    promptListeners.delete(callback);
+  };
+}
+
+function getPromptSnapshot() {
+  return promptState;
+}
+
+export function promptDialog(options: PromptOptions): Promise<string | null> {
+  return new Promise((resolve) => {
+    promptState = { ...options, id: ++nextPromptId, resolve };
+    emitPrompt();
+  });
+}
+
+function resolvePrompt(value: string | null) {
+  if (!promptState) return;
+  const { resolve } = promptState;
+  promptState = null;
+  emitPrompt();
+  resolve(value);
+}
+
+export function PromptHost() {
+  const state = useSyncExternalStore(subscribePrompt, getPromptSnapshot, getPromptSnapshot);
+  const [value, setValue] = useState("");
+
+  useEffect(() => {
+    setValue(state?.initialValue ?? "");
+  }, [state?.id, state?.initialValue]);
+
+  useEffect(() => {
+    if (!state) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") resolvePrompt(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [state]);
+
+  if (!state) return null;
+
+  return (
+    <div className="modal-overlay confirm-overlay" onMouseDown={() => resolvePrompt(null)}>
+      <form
+        className="modal-panel confirm-panel"
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={(event) => {
+          event.preventDefault();
+          resolvePrompt(value);
+        }}
+      >
+        <div className="confirm-body">
+          <h3>{state.title}</h3>
+          {state.message ? <p className="muted">{state.message}</p> : null}
+          <label>
+            {state.label ?? ""}
+            <input
+              autoFocus
+              type={state.inputType ?? "text"}
+              value={value}
+              placeholder={state.placeholder ?? ""}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="secondary-button" onClick={() => resolvePrompt(null)}>
+            {state.cancelLabel ?? "Cancelar"}
+          </button>
+          <button type="submit" className="primary-button">
+            {state.confirmLabel ?? "Aceptar"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

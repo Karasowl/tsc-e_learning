@@ -74,10 +74,10 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [x] (Parte B) Limpieza de blob al borrar asset (`deleteObject`).
 - [~] (menor) Limpieza de blobs en cascada al borrar curso/lección (assets quedan con `onDelete: SetNull`) — pendiente para M10/limpieza.
 
-### M7 — Admin y reportes  ⬜
-- [ ] Tablas con **paginación + orden + filtros** (reporte, usuarios).
+### M7 — Admin y reportes  ⏳ EN CURSO
+- [x] **Reset de contraseña desde el admin** de usuarios (botón "Contraseña" por fila → `promptDialog` con input password → `POST /admin/users/:id/password`). Nuevo `promptDialog`/`PromptHost` reutilizable en `ui.tsx` (montado en layout).
+- [ ] Tablas con **orden + filtros + paginación** (reporte de colaboradores, usuarios).
 - [ ] Dashboard admin con **KPIs visuales** (charts) y reporte con gráfica.
-- [ ] Reset de contraseña / reenviar invitación desde admin de usuarios.
 - [ ] (Opcional) Audit log de acciones admin (crear/borrar curso, cambios de rol, revocar acceso).
 
 ### M8 — Autoría (pulido de profesor)  ⬜

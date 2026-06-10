@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { RefreshCw, Search, ShieldCheck, UserPlus, X } from "lucide-react";
 import { authFetch, errorText } from "./apiClient";
-import { confirmDialog, toast } from "./ui";
+import { confirmDialog, promptDialog, toast } from "./ui";
 
 type Role = "ADMIN" | "TEACHER" | "STUDENT";
 
@@ -148,6 +148,36 @@ export function UsersRolesAdmin({ token, currentUserId }: { token: string; curre
       const message = errorText(statusError);
       setError(message);
       toast.error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetPassword(userId: string, displayName: string) {
+    const newPassword = await promptDialog({
+      title: "Restablecer contraseña",
+      message: `Define una nueva contraseña para ${displayName}.`,
+      label: "Nueva contraseña",
+      inputType: "password",
+      placeholder: "Mínimo 8 caracteres",
+      confirmLabel: "Restablecer"
+    });
+    if (newPassword === null) {
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error("La contraseña debe tener al menos 8 caracteres.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await authFetch(token, `/admin/users/${userId}/password`, {
+        method: "POST",
+        body: JSON.stringify({ newPassword })
+      });
+      toast.success("Contraseña restablecida.");
+    } catch (resetError) {
+      toast.error(errorText(resetError));
     } finally {
       setBusy(false);
     }
@@ -306,14 +336,21 @@ export function UsersRolesAdmin({ token, currentUserId }: { token: string; curre
                   <td>
                     {isSelf ? (
                       <small className="muted">Tú</small>
-                    ) : user.status === "ACTIVE" ? (
-                      <button className="secondary-button" disabled={busy} onClick={() => void setStatus(user.id, "DISABLED")} type="button">
-                        Suspender
-                      </button>
                     ) : (
-                      <button className="secondary-button" disabled={busy} onClick={() => void setStatus(user.id, "ACTIVE")} type="button">
-                        Reactivar
-                      </button>
+                      <div className="row-actions">
+                        {user.status === "ACTIVE" ? (
+                          <button className="secondary-button" disabled={busy} onClick={() => void setStatus(user.id, "DISABLED")} type="button">
+                            Suspender
+                          </button>
+                        ) : (
+                          <button className="secondary-button" disabled={busy} onClick={() => void setStatus(user.id, "ACTIVE")} type="button">
+                            Reactivar
+                          </button>
+                        )}
+                        <button className="ghost-button" disabled={busy} onClick={() => void resetPassword(user.id, user.displayName)} type="button">
+                          Contraseña
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>

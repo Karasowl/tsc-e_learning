@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { ConfirmHost, Toaster } from "./ui";
+import { ConfirmHost, PromptHost, Toaster } from "./ui";
 import "./globals.css";
 
 const inter = Inter({
@@ -28,6 +28,7 @@ export default function RootLayout({
         {children}
         <Toaster />
         <ConfirmHost />
+        <PromptHost />
       </body>
     </html>
   );
