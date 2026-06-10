@@ -47,9 +47,9 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [x] **Búsqueda + filtros** en catálogo del estudiante (todos / en progreso / sin iniciar / aprobados) con buscador en vivo y estado "sin resultados".
 - [ ] Soporte de video más allá de YouTube (Vimeo/MP4/archivo propio) + "marcar visto al terminar".
 - [ ] Desglose por pregunta + explicación en el resultado (requiere que el backend devuelva correctitud por pregunta — coord. con M9).
-- [ ] **Dashboard del estudiante**: "continuar donde quedaste", avance global, pendientes.
+- [x] **Dashboard del estudiante**: banner "Continuar aprendiendo" (curso en progreso) con barra de avance y botón Continuar.
+- [x] Sanitizar `dangerouslySetInnerHTML` del cuerpo de lección (XSS) con **DOMPurify**.
 - [ ] Certificados: verificación pública por código desde la UI; placeholder de portada decente (catálogo + editor).
-- [ ] Sanitizar `dangerouslySetInnerHTML` del cuerpo de lección (XSS).
 
 ### M4 — Higiene de lenguaje (regla de memoria: nada de enums crudos)  ⬜
 - [ ] Mapear a español todos los enums visibles: notificaciones (`eventType`/`status`), resultado de quiz (`status`), summary del reporte, cualquier estado.

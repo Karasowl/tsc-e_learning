@@ -23,6 +23,7 @@ import {
   X
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import DOMPurify from "dompurify";
 import { assetFileUrl } from "./apiClient";
 import { AuthoringView } from "./authoring";
 import { CompletedCourses, CourseReviews, TeachersDirectory } from "./panels";
@@ -252,6 +253,11 @@ export default function Home() {
       return true;
     });
   }, [courses, catalogQuery, catalogFilter]);
+
+  const continueCourse = useMemo(
+    () => courses.find((course) => (course.progressPercent ?? 0) > 0 && (course.progressPercent ?? 0) < 100) ?? null,
+    [courses]
+  );
 
   function goToLesson(delta: number) {
     const next = flatLessons[activeLessonIndex + delta];
@@ -846,6 +852,34 @@ export default function Home() {
                   <RefreshCw aria-hidden />
                 </button>
               </div>
+              {continueCourse ? (
+                <div className="continue-card">
+                  <div className="continue-cover">
+                    {continueCourse.thumbnail ? (
+                      <img
+                        src={assetFileUrl(continueCourse.thumbnail.id)}
+                        alt=""
+                        onError={(event) => {
+                          event.currentTarget.style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <BookOpen aria-hidden />
+                    )}
+                  </div>
+                  <div className="continue-body">
+                    <p className="eyebrow">Continuar aprendiendo</p>
+                    <strong>{continueCourse.title}</strong>
+                    <div className="course-card-progress">
+                      <ProgressBar value={continueCourse.progressPercent ?? 0} />
+                      <span>{Math.round(continueCourse.progressPercent ?? 0)}%</span>
+                    </div>
+                  </div>
+                  <button className="primary-button" onClick={() => loadCourse(continueCourse.id)} type="button">
+                    <Play aria-hidden /> Continuar
+                  </button>
+                </div>
+              ) : null}
               {courses.length > 0 ? (
                 <div className="catalog-toolbar">
                   <div className="search-field">
@@ -1161,7 +1195,7 @@ function LessonPanel({
           <iframe allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowFullScreen src={embedUrl} title={lesson.title} />
         </div>
       ) : null}
-      {lesson.body ? <div className="lesson-body" dangerouslySetInnerHTML={{ __html: lesson.body }} /> : null}
+      {lesson.body ? <div className="lesson-body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(lesson.body) }} /> : null}
       {lesson.assets.length > 0 ? (
         <div className="asset-list">
           {lesson.assets.map((asset) => (
@@ -1402,6 +1436,13 @@ function useRemainingTime(dueAt: string | null) {
   const minutes = Math.floor(remainingMs / 60000);
   const seconds = Math.floor((remainingMs % 60000) / 1000);
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function sanitizeHtml(html: string): string {
+  if (typeof window === "undefined") {
+    return html;
+  }
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
 }
 
 function youtubeEmbedUrl(url: string | null) {
