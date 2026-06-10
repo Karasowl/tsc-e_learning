@@ -12,7 +12,14 @@ const createEvidenceSchema = z.object({
 });
 
 export async function registerInventoryRoutes(server: FastifyInstance) {
-  server.get("/inventory/features", async () => {
+  server.get("/inventory/features", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+    if (!isAdmin(auth)) {
+      return reply.code(403).send({ error: "Solo administradores" });
+    }
     const features = await getPrisma().featureEvidence.findMany({
       orderBy: [{ area: "asc" }, { feature: "asc" }]
     });

@@ -7,6 +7,7 @@ const configSchema = z.object({
   WEB_PUBLIC_URL: z.string().url().default("http://localhost:3000"),
   DATABASE_URL: z.string().min(1),
   JWT_SECRET: z.string().min(24).default("dev-secret-change-this-before-production"),
+  JWT_EXPIRES_IN: z.string().default("30d"),
   STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
   LOCAL_STORAGE_ROOT: z.string().default("./storage"),
   SMTP_HOST: z.string().optional(),
@@ -29,6 +30,7 @@ export type AppConfig = {
   webPublicUrl: string;
   databaseUrl: string;
   jwtSecret: string;
+  jwtExpiresIn: string;
   storageDriver: "local" | "s3";
   localStorageRoot: string;
   smtp: {
@@ -51,6 +53,10 @@ export type AppConfig = {
 export function readConfig(env = process.env): AppConfig {
   const parsed = configSchema.parse(env);
 
+  if (parsed.NODE_ENV === "production" && parsed.JWT_SECRET === "dev-secret-change-this-before-production") {
+    throw new Error("JWT_SECRET debe configurarse con un valor seguro en producción (no el valor por defecto).");
+  }
+
   return {
     nodeEnv: parsed.NODE_ENV,
     apiPort: parsed.API_PORT,
@@ -58,6 +64,7 @@ export function readConfig(env = process.env): AppConfig {
     webPublicUrl: parsed.WEB_PUBLIC_URL,
     databaseUrl: parsed.DATABASE_URL,
     jwtSecret: parsed.JWT_SECRET,
+    jwtExpiresIn: parsed.JWT_EXPIRES_IN,
     storageDriver: parsed.STORAGE_DRIVER,
     localStorageRoot: parsed.LOCAL_STORAGE_ROOT,
     smtp: {

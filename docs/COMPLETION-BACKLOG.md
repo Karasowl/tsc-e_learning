@@ -63,14 +63,15 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [ ] **Recuperar contraseña** (forgot/reset por email con token) — depende de SMTP/Resend (M10).
 - [ ] **Login con Google** (OAuth/OIDC) — credenciales del cliente en `.env` del VPS (NO en repo). Vincular por email.
 
-### M6 — Seguridad (endurecimiento)  ⬜
-- [ ] JWT con **caducidad** (`expiresIn`) + revalidar `User.status`/roles vivos por request (hoy roles "horneados" persisten tras revocar/suspender).
-- [ ] **Proteger `GET /assets/:id/file`** por inscripción/rol (hoy material privado descargable sin auth = IDOR).
-- [ ] **Rate-limit** en `/auth/login` (anti fuerza bruta) y global razonable.
-- [ ] Assert: en `NODE_ENV=production` el `JWT_SECRET` no puede ser el default.
-- [ ] `GET /inventory/features` detrás de auth (filtra rutas de código).
-- [ ] Allow-list de tipos/límite real en subida de archivos.
-- [ ] Limpieza de blobs huérfanos al borrar curso/lección/asset.
+### M6 — Seguridad (endurecimiento)  ⏳ EN CURSO
+- [x] JWT con **caducidad** (`JWT_EXPIRES_IN`, default 30d) + **revalidación viva** de `User.status`/roles en cada request (`requireAuth` consulta la BD; roles ya no se "hornean" en el token → revocar rol/suspender surte efecto al instante). Verificado.
+- [x] **Rate-limit**: global 300/min + `/auth/login` 10/min (`@fastify/rate-limit`). Verificado en prod (429 tras la ráfaga).
+- [x] Assert: en `NODE_ENV=production` el `JWT_SECRET` no puede ser el default (config.ts lanza error).
+- [x] `GET /inventory/features` detrás de auth+isAdmin (antes público). Verificado (401 sin token).
+- [x] Frontend: respuesta **401 → cierra sesión** y vuelve al login (authFetch + api()).
+- [ ] (Parte B) **Proteger `GET /assets/:id/file`** por inscripción/rol con URLs firmadas (token en query, para no romper las portadas en `<img>`) — hoy material descargable sin inscripción (IDOR; IDs son cuid, no enumerables).
+- [ ] (Parte B) Allow-list de tipos/límite real en subida de archivos.
+- [ ] (Parte B) Limpieza de blobs huérfanos al borrar curso/lección/asset.
 
 ### M7 — Admin y reportes  ⬜
 - [ ] Tablas con **paginación + orden + filtros** (reporte, usuarios).

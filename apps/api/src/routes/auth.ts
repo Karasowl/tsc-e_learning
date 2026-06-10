@@ -12,7 +12,7 @@ const loginSchema = z.object({
 });
 
 export async function registerAuthRoutes(server: FastifyInstance) {
-  server.post("/auth/login", async (request, reply) => {
+  server.post("/auth/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
 
     if (!parsed.success) {

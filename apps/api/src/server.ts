@@ -1,6 +1,7 @@
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
 import type { AppConfig } from "./lib/config.js";
 import { startNotificationWorker } from "./lib/notifications-worker.js";
@@ -61,13 +62,21 @@ export async function buildServer(config: AppConfig) {
   });
 
   await server.register(jwt, {
-    secret: config.jwtSecret
+    secret: config.jwtSecret,
+    sign: { expiresIn: config.jwtExpiresIn }
   });
 
   await server.register(multipart, {
     limits: {
       fileSize: 1024 * 1024 * 1024
     }
+  });
+
+  // Throttle abuse globally; /auth/login overrides with a stricter limit.
+  await server.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: "1 minute"
   });
 
   await registerAccountRoutes(server);

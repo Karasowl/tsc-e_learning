@@ -16,6 +16,11 @@ export async function authFetch<T>(token: string, path: string, init: RequestIni
     }
   });
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.localStorage.removeItem("tsc_token");
+      window.localStorage.removeItem("tsc_user");
+      window.location.reload();
+    }
     const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: unknown };
     throw new Error(typeof body.error === "string" ? body.error : `HTTP ${response.status}`);
   }
