@@ -102,10 +102,9 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 ### M11 — Routing real (App Router)  ⬜ (grande, al final)
 - [ ] URLs por vista/curso/lección (deep-link, refresh sin perder pantalla, compartir enlace).
 
-### M12 — Accesibilidad y pulido transversal  ⬜
+### M12 — Accesibilidad y pulido transversal  ⏳ EN CURSO
+- [x] **Modo oscuro** completo vía tokens (`[data-theme="dark"]`) + interruptor en la topbar + script anti-parpadeo en `layout.tsx` (respeta preferencia guardada y del sistema). Tokenizados los `white`/`#fff` hardcodeados que lo impedían.
 - [ ] Focus trap + retorno de foco en modales; `role="progressbar"`/`aria-valuenow`; `aria-label` en course-card.
-- [ ] Contraste de `--muted` y sidebar inactivo a AA.
-- [ ] Modo oscuro vía tokens.
 - [ ] Tablas con `caption`/`scope`.
 
 ---

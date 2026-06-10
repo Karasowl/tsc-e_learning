@@ -217,6 +217,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogFilter, setCatalogFilter] = useState<"all" | "in-progress" | "not-started" | "completed">("all");
   const [reportQuery, setReportQuery] = useState("");
@@ -324,6 +325,10 @@ export default function Home() {
       setToken(storedToken);
       setUser(JSON.parse(storedUser) as User);
     }
+  }, []);
+
+  useEffect(() => {
+    setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
   }, []);
 
   useEffect(() => {
@@ -684,6 +689,15 @@ export default function Home() {
     }
   }
 
+  function toggleTheme() {
+    setTheme((current) => {
+      const next = current === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      window.localStorage.setItem("tsc_theme", next);
+      return next;
+    });
+  }
+
   function updateDisplayName(displayName: string) {
     setUser((current) => {
       if (!current) {
@@ -822,7 +836,11 @@ export default function Home() {
               <h1>{sectionTitle(view)}</h1>
             </div>
           </div>
-          <div className="topbar-user">
+          <div className="topbar-actions">
+            <button className="icon-button theme-toggle" onClick={toggleTheme} type="button" aria-label="Cambiar tema" title="Cambiar tema">
+              {theme === "dark" ? "☀️" : "🌙"}
+            </button>
+            <div className="topbar-user">
             <button
               className="user-pill"
               onClick={() => setProfileOpen((open) => !open)}
@@ -872,6 +890,7 @@ export default function Home() {
                 </div>
               </>
             ) : null}
+          </div>
           </div>
         </header>
 
