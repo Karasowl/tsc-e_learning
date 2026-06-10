@@ -195,6 +195,10 @@ type AnswerState = Record<
 
 type View = "courses" | "manage" | "report" | "certificates" | "notifications" | "teachers" | "completed" | "users" | "profile";
 
+type ReportSortKey = "studentName" | "serviceLabel" | "courseTitle" | "progressPercent" | "status" | "scorePercent";
+
+const REPORT_PAGE_SIZE = 25;
+
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -215,6 +219,10 @@ export default function Home() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogFilter, setCatalogFilter] = useState<"all" | "in-progress" | "not-started" | "completed">("all");
+  const [reportQuery, setReportQuery] = useState("");
+  const [reportStatusFilter, setReportStatusFilter] = useState("");
+  const [reportSort, setReportSort] = useState<{ key: ReportSortKey; dir: "asc" | "desc" }>({ key: "studentName", dir: "asc" });
+  const [reportPage, setReportPage] = useState(1);
 
   const isPrivileged = user?.roles.includes("ADMIN") || user?.roles.includes("TEACHER");
   const isAdmin = user?.roles.includes("ADMIN");
@@ -259,6 +267,47 @@ export default function Home() {
     () => courses.find((course) => (course.progressPercent ?? 0) > 0 && (course.progressPercent ?? 0) < 100) ?? null,
     [courses]
   );
+
+  const filteredReportRows = useMemo(() => {
+    const q = reportQuery.trim().toLowerCase();
+    const rows = reportRows.filter((row) => {
+      if (reportStatusFilter && row.status !== reportStatusFilter) {
+        return false;
+      }
+      if (!q) {
+        return true;
+      }
+      return (
+        row.studentName.toLowerCase().includes(q) ||
+        row.email.toLowerCase().includes(q) ||
+        (row.serviceLabel ?? "").toLowerCase().includes(q) ||
+        row.courseTitle.toLowerCase().includes(q)
+      );
+    });
+    const dir = reportSort.dir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const av = reportSortValue(a, reportSort.key);
+      const bv = reportSortValue(b, reportSort.key);
+      if (typeof av === "number" && typeof bv === "number") {
+        return (av - bv) * dir;
+      }
+      return String(av).localeCompare(String(bv), "es") * dir;
+    });
+  }, [reportRows, reportQuery, reportStatusFilter, reportSort]);
+
+  const reportTotalPages = Math.max(1, Math.ceil(filteredReportRows.length / REPORT_PAGE_SIZE));
+  const reportPageClamped = Math.min(reportPage, reportTotalPages);
+  const pagedReportRows = filteredReportRows.slice(
+    (reportPageClamped - 1) * REPORT_PAGE_SIZE,
+    reportPageClamped * REPORT_PAGE_SIZE
+  );
+
+  function toggleReportSort(key: ReportSortKey) {
+    setReportSort((current) =>
+      current.key === key ? { key, dir: current.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }
+    );
+    setReportPage(1);
+  }
 
   function goToLesson(delta: number) {
     const next = flatLessons[activeLessonIndex + delta];
@@ -1049,26 +1098,68 @@ export default function Home() {
             </div>
             <div className="metrics-row">
               {Object.entries(reportSummary).map(([label, value]) => (
-                <div className="metric" key={label}>
+                <div className={`metric ${metricClass(label)}`} key={label}>
                   <span>{label}</span>
                   <strong>{value}</strong>
                 </div>
               ))}
             </div>
+            {reportRows.length > 0 ? (
+              <div className="catalog-toolbar">
+                <div className="search-field">
+                  <Search aria-hidden />
+                  <input
+                    type="search"
+                    placeholder="Buscar colaborador, servicio o curso…"
+                    value={reportQuery}
+                    onChange={(event) => {
+                      setReportQuery(event.target.value);
+                      setReportPage(1);
+                    }}
+                    aria-label="Buscar en el reporte"
+                  />
+                </div>
+                <div className="filter-chips" role="group" aria-label="Filtrar por resultado">
+                  <button
+                    type="button"
+                    className={`filter-chip ${reportStatusFilter === "" ? "active" : ""}`}
+                    onClick={() => {
+                      setReportStatusFilter("");
+                      setReportPage(1);
+                    }}
+                  >
+                    Todos
+                  </button>
+                  {Object.keys(reportSummary).map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      className={`filter-chip ${reportStatusFilter === status ? "active" : ""}`}
+                      onClick={() => {
+                        setReportStatusFilter(status);
+                        setReportPage(1);
+                      }}
+                    >
+                      {status}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Colaborador</th>
-                    <th>Servicio</th>
-                    <th>Curso</th>
-                    <th>Avance</th>
-                    <th>Resultado</th>
-                    <th>Puntaje</th>
+                    <SortHeader label="Colaborador" sortKey="studentName" sort={reportSort} onSort={toggleReportSort} />
+                    <SortHeader label="Servicio" sortKey="serviceLabel" sort={reportSort} onSort={toggleReportSort} />
+                    <SortHeader label="Curso" sortKey="courseTitle" sort={reportSort} onSort={toggleReportSort} />
+                    <SortHeader label="Avance" sortKey="progressPercent" sort={reportSort} onSort={toggleReportSort} />
+                    <SortHeader label="Resultado" sortKey="status" sort={reportSort} onSort={toggleReportSort} />
+                    <SortHeader label="Puntaje" sortKey="scorePercent" sort={reportSort} onSort={toggleReportSort} />
                   </tr>
                 </thead>
                 <tbody>
-                  {reportRows.map((row, index) => (
+                  {pagedReportRows.map((row, index) => (
                     <tr key={`${row.email}-${row.courseTitle}-${index}`}>
                       <td>
                         <strong>{row.studentName}</strong>
@@ -1078,12 +1169,42 @@ export default function Home() {
                       <td>{row.courseTitle}</td>
                       <td>{row.progressPercent ?? 0}%</td>
                       <td><StatusPill label={row.status} /></td>
-                      <td>{row.latestAttempt?.scorePercent ?? "N/D"}</td>
+                      <td>{row.latestAttempt?.scorePercent != null ? `${row.latestAttempt.scorePercent}%` : "N/D"}</td>
                     </tr>
                   ))}
+                  {filteredReportRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={6}>
+                        <p className="empty-state">No hay filas que coincidan con el filtro.</p>
+                      </td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
             </div>
+            {reportTotalPages > 1 ? (
+              <div className="pagination">
+                <button
+                  className="secondary-button"
+                  disabled={reportPageClamped <= 1}
+                  onClick={() => setReportPage((page) => Math.max(1, page - 1))}
+                  type="button"
+                >
+                  Anterior
+                </button>
+                <span>
+                  Página {reportPageClamped} de {reportTotalPages} · {filteredReportRows.length} filas
+                </span>
+                <button
+                  className="secondary-button"
+                  disabled={reportPageClamped >= reportTotalPages}
+                  onClick={() => setReportPage((page) => Math.min(reportTotalPages, page + 1))}
+                  type="button"
+                >
+                  Siguiente
+                </button>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
@@ -1280,6 +1401,57 @@ function GoogleSignIn({
     return () => script.removeEventListener("load", render);
   }, [clientId, onCredential]);
   return <div className="google-signin" ref={containerRef} />;
+}
+
+function reportSortValue(row: ReportRow, key: ReportSortKey): number | string {
+  switch (key) {
+    case "progressPercent":
+      return row.progressPercent ?? 0;
+    case "scorePercent":
+      return row.latestAttempt?.scorePercent ?? -1;
+    case "serviceLabel":
+      return row.serviceLabel ?? "";
+    case "courseTitle":
+      return row.courseTitle;
+    case "status":
+      return row.status;
+    case "studentName":
+    default:
+      return row.studentName;
+  }
+}
+
+function metricClass(label: string): string {
+  const value = label.toLowerCase();
+  if (value.includes("aprobad")) return "ok";
+  if (value.includes("reprobad")) return "bad";
+  if (value.includes("progreso")) return "info";
+  if (value.includes("pendiente")) return "warn";
+  return "";
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onSort
+}: {
+  label: string;
+  sortKey: ReportSortKey;
+  sort: { key: ReportSortKey; dir: "asc" | "desc" };
+  onSort: (key: ReportSortKey) => void;
+}) {
+  const active = sort.key === sortKey;
+  return (
+    <th>
+      <button type="button" className={`th-sort ${active ? "active" : ""}`} onClick={() => onSort(sortKey)}>
+        {label}
+        <span className="th-sort-ind" aria-hidden>
+          {active ? (sort.dir === "asc" ? "▲" : "▼") : "⇅"}
+        </span>
+      </button>
+    </th>
+  );
 }
 
 function initials(name: string) {

@@ -74,11 +74,11 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [x] (Parte B) Limpieza de blob al borrar asset (`deleteObject`).
 - [~] (menor) Limpieza de blobs en cascada al borrar curso/lección (assets quedan con `onDelete: SetNull`) — pendiente para M10/limpieza.
 
-### M7 — Admin y reportes  ⏳ EN CURSO
+### M7 — Admin y reportes  ✅ DESPLEGADA (2026-06-10)
 - [x] **Reset de contraseña desde el admin** de usuarios (botón "Contraseña" por fila → `promptDialog` con input password → `POST /admin/users/:id/password`). Nuevo `promptDialog`/`PromptHost` reutilizable en `ui.tsx` (montado en layout).
-- [ ] Tablas con **orden + filtros + paginación** (reporte de colaboradores, usuarios).
-- [ ] Dashboard admin con **KPIs visuales** (charts) y reporte con gráfica.
-- [ ] (Opcional) Audit log de acciones admin (crear/borrar curso, cambios de rol, revocar acceso).
+- [x] **Reporte de colaboradores**: encabezados ordenables (todas las columnas), buscador en vivo, filtro por resultado (chips desde el summary) y **paginación** (25/página). KPIs con acento de color por estado.
+- [~] (menor) paginación de la tabla de usuarios (hoy máx 200 con búsqueda/rol server-side) — diferido; charts del dashboard → diferidos (sin lib de gráficas).
+- [ ] (Opcional) Audit log de acciones admin — diferido (no era requisito).
 
 ### M8 — Autoría (pulido de profesor)  ⬜
 - [ ] **Drag-and-drop** para reordenar módulos/clases/preguntas.
