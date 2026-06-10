@@ -58,6 +58,24 @@ export async function uploadAsset(
   return data.asset;
 }
 
+export async function downloadAsset(token: string, assetId: string, filename: string): Promise<void> {
+  const response = await fetch(`${API_URL}/assets/${assetId}/file`, {
+    headers: { authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) {
+    throw new Error("No se pudo descargar el archivo");
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename || "archivo";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function errorText(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }

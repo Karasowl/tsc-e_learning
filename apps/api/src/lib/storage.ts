@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export type StoredObject = {
@@ -14,6 +14,7 @@ export interface StorageProvider {
     bytes: Buffer;
   }): Promise<StoredObject>;
   getObject(key: string): Promise<Buffer>;
+  deleteObject(key: string): Promise<void>;
 }
 
 export class LocalStorageProvider implements StorageProvider {
@@ -36,5 +37,18 @@ export class LocalStorageProvider implements StorageProvider {
     const safeKey = key.replaceAll("\\", "/").replace(/^\/+/, "");
     const fullPath = path.join(this.root, safeKey);
     return readFile(fullPath);
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    const safeKey = key.replaceAll("\\", "/").replace(/^\/+/, "");
+    const fullPath = path.join(this.root, safeKey);
+    try {
+      await unlink(fullPath);
+    } catch (error) {
+      // Missing file is fine — the goal is that the blob no longer exists.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
   }
 }

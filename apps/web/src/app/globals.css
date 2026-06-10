@@ -661,16 +661,26 @@ td small,
   margin-top: 16px;
 }
 
-.asset-list a {
+.asset-list a,
+.asset-list button {
   display: inline-flex;
   min-height: 36px;
   align-items: center;
   gap: 8px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 0 10px;
+  background: var(--surface);
   color: var(--brand-2);
   text-decoration: none;
+  font: inherit;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.asset-list a:hover,
+.asset-list button:hover {
+  border-color: var(--brand);
 }
 
 .question-block {
@@ -1885,9 +1895,13 @@ label textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 8px 12px;
+  background: var(--surface);
   color: var(--brand-2);
   text-decoration: none;
+  font: inherit;
   font-weight: 500;
+  text-align: left;
+  cursor: pointer;
   min-width: 0;
 }
 

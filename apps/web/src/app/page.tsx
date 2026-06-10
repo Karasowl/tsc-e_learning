@@ -24,11 +24,11 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import DOMPurify from "dompurify";
-import { assetFileUrl } from "./apiClient";
+import { assetFileUrl, downloadAsset } from "./apiClient";
 import { AuthoringView } from "./authoring";
 import { CompletedCourses, CourseReviews, ProfileView, TeachersDirectory } from "./panels";
 import { UsersRolesAdmin } from "./usersAdmin";
-import { CardSkeletonGrid } from "./ui";
+import { CardSkeletonGrid, toast } from "./ui";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -850,6 +850,7 @@ export default function Home() {
                       ) : activeLesson ? (
                         <LessonPanel
                           lesson={activeLesson}
+                          token={token}
                           onComplete={completeLesson}
                           onPrev={() => goToLesson(-1)}
                           onNext={() => goToLesson(1)}
@@ -1224,6 +1225,7 @@ function ProgressBar({ value }: { value: number }) {
 
 function LessonPanel({
   lesson,
+  token,
   onComplete,
   onPrev,
   onNext,
@@ -1231,6 +1233,7 @@ function LessonPanel({
   hasNext
 }: {
   lesson: Lesson;
+  token: string;
   onComplete: (lessonId: string) => void;
   onPrev: () => void;
   onNext: () => void;
@@ -1258,12 +1261,27 @@ function LessonPanel({
       {lesson.body ? <div className="lesson-body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(lesson.body) }} /> : null}
       {lesson.assets.length > 0 ? (
         <div className="asset-list">
-          {lesson.assets.map((asset) => (
-            <a href={asset.originalUrl ?? "#"} key={asset.id} rel="noreferrer" target="_blank">
-              <FileText aria-hidden />
-              {asset.title}
-            </a>
-          ))}
+          {lesson.assets.map((asset) =>
+            asset.originalUrl ? (
+              <a href={asset.originalUrl} key={asset.id} rel="noreferrer" target="_blank">
+                <FileText aria-hidden />
+                {asset.title}
+              </a>
+            ) : (
+              <button
+                key={asset.id}
+                type="button"
+                onClick={() =>
+                  void downloadAsset(token, asset.id, asset.title).catch(() =>
+                    toast.error("No se pudo descargar el archivo")
+                  )
+                }
+              >
+                <FileText aria-hidden />
+                {asset.title}
+              </button>
+            )
+          )}
         </div>
       ) : null}
       <div className="lesson-nav">

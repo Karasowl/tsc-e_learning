@@ -4,7 +4,7 @@ import { ComponentType, FormEvent, ReactNode, useEffect, useState } from "react"
 import { ArrowLeft, Boxes, Check, ClipboardList, Download, FilePlus2, FileText, FolderPlus, GraduationCap, ImagePlus, LayoutList, Paperclip, Pencil, Plus, RefreshCw, Save, Search, Trash2, UploadCloud, UserPlus, Users, X } from "lucide-react";
 import { RichTextEditor } from "./RichTextEditor";
 import { QuizBuilder } from "./QuizBuilder";
-import { assetFileUrl, authFetch, errorText, uploadAsset } from "./apiClient";
+import { assetFileUrl, authFetch, downloadAsset, errorText, uploadAsset } from "./apiClient";
 import { confirmDialog, toast } from "./ui";
 
 type AdminCourse = {
@@ -1101,11 +1101,19 @@ function LessonModal({
           <ul className="docs-list">
             {assets.map((asset) => (
               <li className="doc-item" key={asset.id}>
-                <a className="doc-link" href={assetFileUrl(asset.id)} target="_blank" rel="noreferrer">
+                <button
+                  className="doc-link"
+                  type="button"
+                  onClick={() =>
+                    void downloadAsset(token, asset.id, asset.title).catch(() =>
+                      toast.error("No se pudo descargar el archivo")
+                    )
+                  }
+                >
                   <FileText aria-hidden />
                   <span>{asset.title}</span>
                   <Download aria-hidden />
-                </a>
+                </button>
                 <button className="icon-button" disabled={busy} onClick={() => void removeDoc(asset.id)} title="Eliminar documento" type="button">
                   <Trash2 aria-hidden />
                 </button>

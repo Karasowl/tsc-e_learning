@@ -63,15 +63,16 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [ ] **Recuperar contraseña** (forgot/reset por email con token) — depende de SMTP/Resend (M10).
 - [ ] **Login con Google** (OAuth/OIDC) — credenciales del cliente en `.env` del VPS (NO en repo). Vincular por email.
 
-### M6 — Seguridad (endurecimiento)  ⏳ EN CURSO
+### M6 — Seguridad (endurecimiento)  ✅ DESPLEGADA (2026-06-10)
 - [x] JWT con **caducidad** (`JWT_EXPIRES_IN`, default 30d) + **revalidación viva** de `User.status`/roles en cada request (`requireAuth` consulta la BD; roles ya no se "hornean" en el token → revocar rol/suspender surte efecto al instante). Verificado.
 - [x] **Rate-limit**: global 300/min + `/auth/login` 10/min (`@fastify/rate-limit`). Verificado en prod (429 tras la ráfaga).
 - [x] Assert: en `NODE_ENV=production` el `JWT_SECRET` no puede ser el default (config.ts lanza error).
 - [x] `GET /inventory/features` detrás de auth+isAdmin (antes público). Verificado (401 sin token).
 - [x] Frontend: respuesta **401 → cierra sesión** y vuelve al login (authFetch + api()).
-- [ ] (Parte B) **Proteger `GET /assets/:id/file`** por inscripción/rol con URLs firmadas (token en query, para no romper las portadas en `<img>`) — hoy material descargable sin inscripción (IDOR; IDs son cuid, no enumerables).
-- [ ] (Parte B) Allow-list de tipos/límite real en subida de archivos.
-- [ ] (Parte B) Limpieza de blobs huérfanos al borrar curso/lección/asset.
+- [x] (Parte B) **Protección de descargas**: imágenes (portadas/embebidas) siguen públicas para `<img>`; los **documentos (PDF/Office/video/etc.) exigen auth + acceso al curso** (admin / profesor dueño / inscrito). Frontend descarga documentos autenticados (blob) en learner y authoring. Verificado: doc sin token → 401, imagen pública, admin pasa el gate.
+- [x] (Parte B) Allow-list de tipos en subida (`POST /assets` → 415 si no permitido).
+- [x] (Parte B) Limpieza de blob al borrar asset (`deleteObject`).
+- [~] (menor) Limpieza de blobs en cascada al borrar curso/lección (assets quedan con `onDelete: SetNull`) — pendiente para M10/limpieza.
 
 ### M7 — Admin y reportes  ⬜
 - [ ] Tablas con **paginación + orden + filtros** (reporte, usuarios).
