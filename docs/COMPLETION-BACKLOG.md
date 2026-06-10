@@ -41,13 +41,14 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [x] **Skeletons** aplicados al catálogo del estudiante; primitivas listas para tablas admin.
 - [~] (Polish diferido a M12) aplicar skeletons en tablas admin (cursos/usuarios/reporte) y estados vacíos con ilustración/CTA.
 
-### M3 — Experiencia del estudiante  ⬜
-- [ ] **Reproductor de lección**: navegación Anterior/Siguiente + autoavance + barra de progreso del curso animada; íconos por tipo (video/pdf/quiz).
+### M3 — Experiencia del estudiante  ⏳ EN CURSO
+- [x] **Reproductor de lección**: navegación Anterior/Siguiente entre lecciones + barra de progreso animada (M1). (Autoavance e íconos por tipo: pendientes menores.)
+- [x] **Resultado de examen rico**: tarjeta aprobado/reprobado clara, puntaje grande, botón **Reintentar**, sin enum crudo (`QuizResult`); icono de cerrar corregido (X).
+- [x] **Búsqueda + filtros** en catálogo del estudiante (todos / en progreso / sin iniciar / aprobados) con buscador en vivo y estado "sin resultados".
 - [ ] Soporte de video más allá de YouTube (Vimeo/MP4/archivo propio) + "marcar visto al terminar".
-- [ ] **Resultado de examen rico**: aprobado/reprobado claro, puntaje, desglose por pregunta, explicación, botón reintentar — sin enums crudos.
-- [ ] **Búsqueda + filtros** en catálogo (en progreso / no iniciados / aprobados).
+- [ ] Desglose por pregunta + explicación en el resultado (requiere que el backend devuelva correctitud por pregunta — coord. con M9).
 - [ ] **Dashboard del estudiante**: "continuar donde quedaste", avance global, pendientes.
-- [ ] Certificados: verificación pública por código desde la UI; placeholder de portada decente.
+- [ ] Certificados: verificación pública por código desde la UI; placeholder de portada decente (catálogo + editor).
 - [ ] Sanitizar `dangerouslySetInnerHTML` del cuerpo de lección (XSS).
 
 ### M4 — Higiene de lenguaje (regla de memoria: nada de enums crudos)  ⬜

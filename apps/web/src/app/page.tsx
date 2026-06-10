@@ -17,6 +17,7 @@ import {
   Mail,
   Play,
   RefreshCw,
+  Search,
   ShieldCheck,
   UserRound,
   X
@@ -210,6 +211,8 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogFilter, setCatalogFilter] = useState<"all" | "in-progress" | "not-started" | "completed">("all");
 
   const isPrivileged = user?.roles.includes("ADMIN") || user?.roles.includes("TEACHER");
   const isAdmin = user?.roles.includes("ADMIN");
@@ -223,6 +226,40 @@ export default function Home() {
     }
     return selectedCourse.modules.flatMap((module) => module.lessons).find((lesson) => lesson.id === activeLessonId) ?? null;
   }, [activeLessonId, selectedCourse]);
+
+  const flatLessons = useMemo(
+    () => (selectedCourse ? selectedCourse.modules.flatMap((module) => module.lessons) : []),
+    [selectedCourse]
+  );
+  const activeLessonIndex = flatLessons.findIndex((lesson) => lesson.id === activeLessonId);
+
+  const visibleCourses = useMemo(() => {
+    const q = catalogQuery.trim().toLowerCase();
+    return courses.filter((course) => {
+      if (q && !course.title.toLowerCase().includes(q)) {
+        return false;
+      }
+      const percent = course.progressPercent ?? 0;
+      if (catalogFilter === "in-progress") {
+        return percent > 0 && percent < 100;
+      }
+      if (catalogFilter === "not-started") {
+        return percent <= 0;
+      }
+      if (catalogFilter === "completed") {
+        return percent >= 100;
+      }
+      return true;
+    });
+  }, [courses, catalogQuery, catalogFilter]);
+
+  function goToLesson(delta: number) {
+    const next = flatLessons[activeLessonIndex + delta];
+    if (next) {
+      setQuizAttempt(null);
+      setActiveLessonId(next.id);
+    }
+  }
 
   useEffect(() => {
     const storedToken = window.localStorage.getItem("tsc_token");
@@ -775,9 +812,17 @@ export default function Home() {
                           onAnswerChange={setAnswers}
                           onClose={() => setQuizAttempt(null)}
                           onSubmit={submitQuiz}
+                          onRetry={startQuiz}
                         />
                       ) : activeLesson ? (
-                        <LessonPanel lesson={activeLesson} onComplete={completeLesson} />
+                        <LessonPanel
+                          lesson={activeLesson}
+                          onComplete={completeLesson}
+                          onPrev={() => goToLesson(-1)}
+                          onNext={() => goToLesson(1)}
+                          hasPrev={activeLessonIndex > 0}
+                          hasNext={activeLessonIndex >= 0 && activeLessonIndex < flatLessons.length - 1}
+                        />
                       ) : (
                         <p className="empty-state">Selecciona una lección.</p>
                       )}
@@ -801,13 +846,46 @@ export default function Home() {
                   <RefreshCw aria-hidden />
                 </button>
               </div>
+              {courses.length > 0 ? (
+                <div className="catalog-toolbar">
+                  <div className="search-field">
+                    <Search aria-hidden />
+                    <input
+                      type="search"
+                      placeholder="Buscar curso…"
+                      value={catalogQuery}
+                      onChange={(event) => setCatalogQuery(event.target.value)}
+                      aria-label="Buscar curso"
+                    />
+                  </div>
+                  <div className="filter-chips" role="group" aria-label="Filtrar cursos">
+                    {([
+                      { key: "all", label: "Todos" },
+                      { key: "in-progress", label: "En progreso" },
+                      { key: "not-started", label: "Sin iniciar" },
+                      { key: "completed", label: "Aprobados" }
+                    ] as const).map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        className={`filter-chip ${catalogFilter === option.key ? "active" : ""}`}
+                        onClick={() => setCatalogFilter(option.key)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {busy && courses.length === 0 ? (
                 <CardSkeletonGrid count={6} />
               ) : courses.length === 0 ? (
                 <p className="empty-state">Aún no tienes cursos asignados. Pídele acceso a tu administrador.</p>
+              ) : visibleCourses.length === 0 ? (
+                <p className="empty-state">No hay cursos que coincidan con tu búsqueda.</p>
               ) : (
                 <div className="catalog-grid">
-                  {courses.map((course) => (
+                  {visibleCourses.map((course) => (
                     <button className="course-card" key={course.id} onClick={() => loadCourse(course.id)} type="button">
                       <div className="course-card-cover">
                         {course.thumbnail ? (
@@ -1050,7 +1128,21 @@ function ProgressBar({ value }: { value: number }) {
   );
 }
 
-function LessonPanel({ lesson, onComplete }: { lesson: Lesson; onComplete: (lessonId: string) => void }) {
+function LessonPanel({
+  lesson,
+  onComplete,
+  onPrev,
+  onNext,
+  hasPrev,
+  hasNext
+}: {
+  lesson: Lesson;
+  onComplete: (lessonId: string) => void;
+  onPrev: () => void;
+  onNext: () => void;
+  hasPrev: boolean;
+  hasNext: boolean;
+}) {
   const embedUrl = youtubeEmbedUrl(lesson.videoUrl);
   return (
     <article className="content-surface">
@@ -1080,6 +1172,14 @@ function LessonPanel({ lesson, onComplete }: { lesson: Lesson; onComplete: (less
           ))}
         </div>
       ) : null}
+      <div className="lesson-nav">
+        <button className="secondary-button" disabled={!hasPrev} onClick={onPrev} type="button">
+          <ArrowLeft aria-hidden /> Anterior
+        </button>
+        <button className="secondary-button" disabled={!hasNext} onClick={onNext} type="button">
+          Siguiente <ChevronRight aria-hidden />
+        </button>
+      </div>
     </article>
   );
 }
@@ -1090,7 +1190,8 @@ function QuizPanel({
   busy,
   onAnswerChange,
   onClose,
-  onSubmit
+  onSubmit,
+  onRetry
 }: {
   answers: AnswerState;
   attempt: QuizAttempt;
@@ -1098,6 +1199,7 @@ function QuizPanel({
   onAnswerChange: (answers: AnswerState) => void;
   onClose: () => void;
   onSubmit: () => void;
+  onRetry: (quizId: string) => void;
 }) {
   const remaining = useRemainingTime(attempt.attempt.dueAt);
   const submitted = attempt.attempt.status !== "IN_PROGRESS";
@@ -1123,7 +1225,7 @@ function QuizPanel({
         <div className="quiz-actions">
           {attempt.attempt.dueAt && !submitted ? <span className="timer">{remaining}</span> : null}
           <button className="icon-button" onClick={onClose} title="Cerrar" type="button">
-            <ChevronRight aria-hidden />
+            <X aria-hidden />
           </button>
         </div>
       </div>
@@ -1161,10 +1263,7 @@ function QuizPanel({
         </fieldset>
       ))}
       {submitted ? (
-        <div className="result-strip">
-          <strong>{attempt.attempt.status}</strong>
-          <span>{attempt.attempt.scorePercent ?? 0}%</span>
-        </div>
+        <QuizResult attempt={attempt.attempt} onRetry={() => onRetry(attempt.attempt.quizId)} onClose={onClose} />
       ) : (
         <button className="primary-button" disabled={busy} onClick={onSubmit} type="button">
           <GraduationCap aria-hidden />
@@ -1172,6 +1271,41 @@ function QuizPanel({
         </button>
       )}
     </article>
+  );
+}
+
+function QuizResult({
+  attempt,
+  onRetry,
+  onClose
+}: {
+  attempt: AttemptSummary;
+  onRetry: () => void;
+  onClose: () => void;
+}) {
+  const passed = attempt.status === "PASSED";
+  const score = Math.round(attempt.scorePercent ?? 0);
+  return (
+    <div className={`quiz-result ${passed ? "passed" : "failed"}`}>
+      <span className="quiz-result-badge">{passed ? <Award aria-hidden /> : <RefreshCw aria-hidden />}</span>
+      <h3>{passed ? "¡Aprobado!" : "No aprobado"}</h3>
+      <p className="quiz-result-score">{score}%</p>
+      <p className="muted">
+        {passed
+          ? "Superaste la evaluación. ¡Bien hecho!"
+          : "No alcanzaste el puntaje mínimo. Puedes intentarlo de nuevo."}
+      </p>
+      <div className="quiz-result-actions">
+        {!passed ? (
+          <button className="primary-button" onClick={onRetry} type="button">
+            <RefreshCw aria-hidden /> Reintentar
+          </button>
+        ) : null}
+        <button className="secondary-button" onClick={onClose} type="button">
+          Volver al curso
+        </button>
+      </div>
+    </div>
   );
 }
 
