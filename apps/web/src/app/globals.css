@@ -828,9 +828,26 @@ tr:last-child td {
 
 .status-pill.archived,
 .status-pill.disabled,
-.status-pill.suspendido {
+.status-pill.suspendido,
+.status-pill.omitido {
   background: var(--neutral-bg);
   color: var(--muted);
+}
+
+.status-pill.enviado {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+
+.status-pill.fallido {
+  background: var(--bad-bg);
+  color: var(--bad-fg);
+}
+
+.status-pill.pendiente,
+.status-pill.enviando {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
 }
 
 .certificate-grid {

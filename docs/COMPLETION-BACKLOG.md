@@ -51,9 +51,10 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [x] Sanitizar `dangerouslySetInnerHTML` del cuerpo de lección (XSS) con **DOMPurify**.
 - [ ] Certificados: verificación pública por código desde la UI; placeholder de portada decente (catálogo + editor).
 
-### M4 — Higiene de lenguaje (regla de memoria: nada de enums crudos)  ⬜
-- [ ] Mapear a español todos los enums visibles: notificaciones (`eventType`/`status`), resultado de quiz (`status`), summary del reporte, cualquier estado.
-- [ ] Auditoría rápida de strings filtrados (WordPress/tecnología/proceso).
+### M4 — Higiene de lenguaje (regla de memoria: nada de enums crudos)  ✅ DESPLEGADA (2026-06-10)
+- [x] Notificaciones: `eventType` (regla + log) y `status` mapeados a español (`notificationEventLabel`/`notificationStatusLabel` + `humanizeEnum` de fallback); status como pill de color.
+- [x] Auditoría completa del frontend: el resto ya estaba en español — resultado de quiz (M3 `QuizResult`), summary del reporte (claves ya en español desde el backend), `StatusTag`/`EnrollStatusTag`/`statusEs` (cursos/inscripción/usuarios), selects de estado con opciones en español. No quedan enums crudos visibles.
+- [~] (Opcional, sin impacto visible) unificar `StatusPill`/`StatusTag`/`EnrollStatusTag` en un componente — los 3 ya producen español correcto; se deja como limpieza futura de bajo valor.
 
 ### M5 — Autenticación y cuenta (esenciales modernos)  ⬜
 - [ ] **Perfil de usuario** self-service: `GET/PUT /me` + pantalla (datos, foto/iniciales, etiqueta servicio).

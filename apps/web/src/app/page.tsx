@@ -1090,7 +1090,7 @@ export default function Home() {
                 {notificationRules.map((rule) => (
                   <div className="rule-row" key={rule.id}>
                     <Bell aria-hidden />
-                    <span>{rule.eventType}</span>
+                    <span>{notificationEventLabel(rule.eventType)}</span>
                     <small>{rule.recipients.join(", ")}</small>
                   </div>
                 ))}
@@ -1107,8 +1107,8 @@ export default function Home() {
                   <tbody>
                     {notificationLogs.map((log) => (
                       <tr key={log.id}>
-                        <td>{log.eventType}</td>
-                        <td>{log.status}</td>
+                        <td>{notificationEventLabel(log.eventType)}</td>
+                        <td><StatusPill label={notificationStatusLabel(log.status)} /></td>
                         <td>{new Date(log.createdAt).toLocaleString("es-MX")}</td>
                       </tr>
                     ))}
@@ -1121,6 +1121,37 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+const NOTIFICATION_EVENT_LABELS: Record<string, string> = {
+  QUIZ_PASSED: "Examen aprobado",
+  QUIZ_FAILED: "Examen reprobado",
+  COURSE_COMPLETED: "Curso completado",
+  CERTIFICATE_ISSUED: "Diploma emitido"
+};
+
+const NOTIFICATION_STATUS_LABELS: Record<string, string> = {
+  PENDING: "Pendiente",
+  SENT: "Enviado",
+  FAILED: "Fallido",
+  SENDING: "Enviando",
+  SKIPPED: "Omitido"
+};
+
+function humanizeEnum(value: string) {
+  if (!value) {
+    return value;
+  }
+  const text = value.toLowerCase().replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function notificationEventLabel(value: string) {
+  return NOTIFICATION_EVENT_LABELS[value] ?? humanizeEnum(value);
+}
+
+function notificationStatusLabel(value: string) {
+  return NOTIFICATION_STATUS_LABELS[value] ?? humanizeEnum(value);
 }
 
 function initials(name: string) {
