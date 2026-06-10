@@ -1,6 +1,6 @@
 "use client";
 
-import { ComponentType, FormEvent, ReactNode, useEffect, useState } from "react";
+import { ComponentType, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Boxes, Check, ClipboardList, Download, FilePlus2, FileText, FolderPlus, GraduationCap, ImagePlus, LayoutList, Paperclip, Pencil, Plus, RefreshCw, Save, Search, Trash2, UploadCloud, UserPlus, Users, X } from "lucide-react";
 import { RichTextEditor } from "./RichTextEditor";
 import { QuizBuilder } from "./QuizBuilder";
@@ -842,10 +842,39 @@ function Modal({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    const focusables = () =>
+      panel
+        ? Array.from(
+            panel.querySelectorAll<HTMLElement>(
+              'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )
+          ).filter((element) => element.offsetParent !== null)
+        : [];
+    (focusables()[0] ?? panel)?.focus();
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
         onClose();
+        return;
+      }
+      if (event.key === "Tab" && panel) {
+        const items = focusables();
+        if (items.length === 0) {
+          event.preventDefault();
+          return;
+        }
+        const firstEl = items[0]!;
+        const lastEl = items[items.length - 1]!;
+        if (event.shiftKey && document.activeElement === firstEl) {
+          event.preventDefault();
+          lastEl.focus();
+        } else if (!event.shiftKey && document.activeElement === lastEl) {
+          event.preventDefault();
+          firstEl.focus();
+        }
       }
     }
     document.addEventListener("keydown", onKey);
@@ -854,6 +883,7 @@ function Modal({
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus?.();
     };
   }, [onClose]);
 
@@ -866,7 +896,14 @@ function Modal({
         }
       }}
     >
-      <div className={`modal-panel ${wide ? "wide" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div
+        ref={panelRef}
+        className={`modal-panel ${wide ? "wide" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+      >
         <div className="modal-head">
           <h3>{title}</h3>
           <button className="icon-button" onClick={onClose} title="Cerrar" type="button">

@@ -1054,7 +1054,13 @@ export default function Home() {
               ) : (
                 <div className="catalog-grid">
                   {visibleCourses.map((course) => (
-                    <button className="course-card" key={course.id} onClick={() => loadCourse(course.id)} type="button">
+                    <button
+                      className="course-card"
+                      key={course.id}
+                      onClick={() => loadCourse(course.id)}
+                      type="button"
+                      aria-label={`Abrir curso ${course.title}`}
+                    >
                       <div className="course-card-cover">
                         {course.thumbnail ? (
                           <img
@@ -1508,7 +1514,14 @@ function NavButton({
 function ProgressBar({ value }: { value: number }) {
   const percent = Math.max(0, Math.min(100, value));
   return (
-    <div className="progress-track" aria-label={`Avance ${percent}%`}>
+    <div
+      className="progress-track"
+      role="progressbar"
+      aria-valuenow={percent}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={`Avance ${percent}%`}
+    >
       <span style={{ width: `${percent}%` }} />
     </div>
   );
