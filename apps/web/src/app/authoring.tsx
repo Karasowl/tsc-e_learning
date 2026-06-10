@@ -210,12 +210,26 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
   const [tab, setTab] = useState<"content" | "students">("content");
   const [lessonModal, setLessonModal] = useState<{ moduleId: string; lesson?: EditorLesson } | null>(null);
   const [coverError, setCoverError] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState<{
+    title: string;
+    excerpt: string | null;
+    description: string | null;
+    level: string | null;
+    status: string;
+  } | null>(null);
 
   async function load() {
     setError(null);
     try {
       const data = await authFetch<{ course: EditorCourse }>(token, `/courses/${courseId}`);
       setCourse(data.course);
+      setSavedSnapshot({
+        title: data.course.title,
+        excerpt: data.course.excerpt ?? null,
+        description: data.course.description ?? null,
+        level: data.course.level ?? null,
+        status: data.course.status
+      });
       setCoverError(false);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -249,6 +263,13 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
         })
       });
       setSavedAt(new Date().toLocaleTimeString("es-MX"));
+      setSavedSnapshot({
+        title: course.title,
+        excerpt: course.excerpt ?? null,
+        description: course.description ?? null,
+        level: course.level ?? null,
+        status: course.status
+      });
       toast.success("Curso guardado.");
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : String(saveError);
@@ -368,6 +389,43 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
     }
   }
 
+  const dirty = Boolean(
+    course &&
+      savedSnapshot &&
+      (course.title !== savedSnapshot.title ||
+        (course.excerpt ?? null) !== savedSnapshot.excerpt ||
+        (course.description ?? null) !== savedSnapshot.description ||
+        (course.level ?? null) !== savedSnapshot.level ||
+        course.status !== savedSnapshot.status)
+  );
+
+  useEffect(() => {
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      if (dirty) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
+  async function handleBack() {
+    if (dirty) {
+      const leave = await confirmDialog({
+        title: "Cambios sin guardar",
+        message: "Tienes cambios sin guardar en el curso. ¿Salir sin guardar?",
+        confirmLabel: "Salir sin guardar",
+        cancelLabel: "Seguir editando",
+        danger: true
+      });
+      if (!leave) {
+        return;
+      }
+    }
+    onBack();
+  }
+
   if (!course) {
     return (
       <section className="data-section">
@@ -397,7 +455,7 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
   return (
     <section className="data-section editor">
       <div className="section-header">
-        <button className="ghost-button" onClick={onBack} type="button">
+        <button className="ghost-button" onClick={() => void handleBack()} type="button">
           <ArrowLeft aria-hidden /> Volver
         </button>
         <div className="quiz-actions">

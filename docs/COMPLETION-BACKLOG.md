@@ -84,7 +84,7 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [x] Password al crear estudiante/usuario como `type="password"` (antes texto visible).
 - [x] **Validación del constructor de exámenes**: no guardar opción única/múltiple sin respuesta correcta; mínimos por tipo (completar/enlazar/ordenar); enunciado obligatorio.
 - [ ] **Drag-and-drop** para reordenar módulos/clases/preguntas. (L)
-- [ ] Guard de cambios sin guardar a nivel **curso** (hoy solo el LessonModal) + autosave.
+- [x] Guard de cambios sin guardar a nivel **curso** (snapshot de metadatos + `beforeunload` + confirm al volver). (Autosave no necesario con el guard.)
 - [ ] Vista previa del examen como alumno.
 - [ ] (Opcional) Reemplazar `RichTextEditor` (execCommand) por editor moderno (Tiptap/Lexical). (L)
 
