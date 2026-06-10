@@ -18,13 +18,15 @@ import {
   Play,
   RefreshCw,
   ShieldCheck,
-  UserRound
+  UserRound,
+  X
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { assetFileUrl } from "./apiClient";
 import { AuthoringView } from "./authoring";
 import { CompletedCourses, CourseReviews, TeachersDirectory } from "./panels";
 import { UsersRolesAdmin } from "./usersAdmin";
+import { CardSkeletonGrid } from "./ui";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -206,6 +208,8 @@ export default function Home() {
   const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const isPrivileged = user?.roles.includes("ADMIN") || user?.roles.includes("TEACHER");
   const isAdmin = user?.roles.includes("ADMIN");
@@ -612,15 +616,21 @@ export default function Home() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
+      {navOpen ? (
+        <button className="nav-backdrop" aria-label="Cerrar menú" onClick={() => setNavOpen(false)} type="button" />
+      ) : null}
+      <aside className={`sidebar ${navOpen ? "open" : ""}`}>
         <div className="sidebar-brand">
           <img className="sidebar-logo" src="/tsc-shield-light.png" alt="TSC" />
           <div>
             <strong>Capacita</strong>
             <small>Seguridad Privada</small>
           </div>
+          <button className="icon-button nav-close" onClick={() => setNavOpen(false)} aria-label="Cerrar menú" type="button">
+            <X aria-hidden />
+          </button>
         </div>
-        <nav className="nav-stack" aria-label="Secciones">
+        <nav className="nav-stack" aria-label="Secciones" onClick={() => setNavOpen(false)}>
           {canLearn ? (
             <NavButton active={view === "courses"} icon={<BookOpen aria-hidden />} label="Cursos inscritos" onClick={() => setView("courses")} />
           ) : null}
@@ -657,13 +667,56 @@ export default function Home() {
 
       <section className="workspace">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">{user.roles.map(roleLabel).join(" · ")}</p>
-            <h1>{sectionTitle(view)}</h1>
+          <div className="topbar-lead">
+            <button className="nav-toggle" aria-label="Abrir menú" onClick={() => setNavOpen(true)} type="button">
+              <span />
+              <span />
+              <span />
+            </button>
+            <div>
+              <p className="eyebrow">{user.roles.map(roleLabel).join(" · ")}</p>
+              <h1>{sectionTitle(view)}</h1>
+            </div>
           </div>
-          <div className="user-pill">
-            <UserRound aria-hidden />
-            <span>{user.displayName}</span>
+          <div className="topbar-user">
+            <button
+              className="user-pill"
+              onClick={() => setProfileOpen((open) => !open)}
+              aria-haspopup="menu"
+              aria-expanded={profileOpen}
+              type="button"
+            >
+              <span className="avatar" aria-hidden>
+                {initials(user.displayName)}
+              </span>
+              <span>{user.displayName}</span>
+            </button>
+            {profileOpen ? (
+              <>
+                <button
+                  className="menu-backdrop"
+                  aria-label="Cerrar menú"
+                  onClick={() => setProfileOpen(false)}
+                  type="button"
+                />
+                <div className="profile-menu" role="menu">
+                  <div className="profile-menu-head">
+                    <span className="avatar lg" aria-hidden>
+                      {initials(user.displayName)}
+                    </span>
+                    <div>
+                      <strong>{user.displayName}</strong>
+                      <small>{user.email}</small>
+                    </div>
+                  </div>
+                  <p className="profile-roles">{user.roles.map(roleLabel).join(" · ")}</p>
+                  <button className="ghost-button profile-logout" onClick={logout} type="button">
+                    <LogOut aria-hidden />
+                    Salir
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         </header>
 
@@ -748,39 +801,42 @@ export default function Home() {
                   <RefreshCw aria-hidden />
                 </button>
               </div>
-              <div className="catalog-grid">
-                {courses.map((course) => (
-                  <button className="course-card" key={course.id} onClick={() => loadCourse(course.id)} type="button">
-                    <div className="course-card-cover">
-                      {course.thumbnail ? (
-                        <img
-                          src={assetFileUrl(course.thumbnail.id)}
-                          alt=""
-                          onError={(event) => {
-                            event.currentTarget.style.display = "none";
-                          }}
-                        />
-                      ) : (
-                        <BookOpen aria-hidden />
-                      )}
-                    </div>
-                    <div className="course-card-body">
-                      <strong>{course.title}</strong>
-                      <small className="muted">{course.teacher?.displayName ?? "TSC Capacitación"}</small>
-                      <small className="muted">
-                        {course.counts.lessons} lecciones · {course.counts.quizzes} exámenes
-                      </small>
-                      <div className="course-card-progress">
-                        <ProgressBar value={course.progressPercent ?? 0} />
-                        <span>{Math.round(course.progressPercent ?? 0)}%</span>
+              {busy && courses.length === 0 ? (
+                <CardSkeletonGrid count={6} />
+              ) : courses.length === 0 ? (
+                <p className="empty-state">Aún no tienes cursos asignados. Pídele acceso a tu administrador.</p>
+              ) : (
+                <div className="catalog-grid">
+                  {courses.map((course) => (
+                    <button className="course-card" key={course.id} onClick={() => loadCourse(course.id)} type="button">
+                      <div className="course-card-cover">
+                        {course.thumbnail ? (
+                          <img
+                            src={assetFileUrl(course.thumbnail.id)}
+                            alt=""
+                            onError={(event) => {
+                              event.currentTarget.style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <BookOpen aria-hidden />
+                        )}
                       </div>
-                    </div>
-                  </button>
-                ))}
-                {courses.length === 0 ? (
-                  <p className="empty-state">Aún no tienes cursos asignados. Pídele acceso a tu administrador.</p>
-                ) : null}
-              </div>
+                      <div className="course-card-body">
+                        <strong>{course.title}</strong>
+                        <small className="muted">{course.teacher?.displayName ?? "TSC Capacitación"}</small>
+                        <small className="muted">
+                          {course.counts.lessons} lecciones · {course.counts.quizzes} exámenes
+                        </small>
+                        <div className="course-card-progress">
+                          <ProgressBar value={course.progressPercent ?? 0} />
+                          <span>{Math.round(course.progressPercent ?? 0)}%</span>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </section>
           )
         ) : null}
@@ -953,6 +1009,17 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return "?";
+  }
+  if (parts.length === 1) {
+    return parts[0]!.slice(0, 2).toUpperCase();
+  }
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
 }
 
 function NavButton({

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { RefreshCw, Search, ShieldCheck, UserPlus, X } from "lucide-react";
 import { authFetch, errorText } from "./apiClient";
+import { confirmDialog, toast } from "./ui";
 
 type Role = "ADMIN" | "TEACHER" | "STUDENT";
 
@@ -85,14 +86,26 @@ export function UsersRolesAdmin({ token, currentUserId }: { token: string; curre
         body: JSON.stringify({ role })
       });
       patchUser(userId, { roles: data.roles });
+      toast.success("Rol asignado.");
     } catch (addError) {
-      setError(errorText(addError));
+      const message = errorText(addError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
   }
 
   async function removeRole(userId: string, role: Role) {
+    const confirmed = await confirmDialog({
+      title: "Quitar rol",
+      message: "El usuario perderá este rol y sus permisos asociados.",
+      confirmLabel: "Quitar rol",
+      danger: true
+    });
+    if (!confirmed) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -100,14 +113,28 @@ export function UsersRolesAdmin({ token, currentUserId }: { token: string; curre
         method: "DELETE"
       });
       patchUser(userId, { roles: data.roles });
+      toast.success("Rol retirado.");
     } catch (removeError) {
-      setError(errorText(removeError));
+      const message = errorText(removeError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
   }
 
   async function setStatus(userId: string, status: "ACTIVE" | "DISABLED") {
+    if (status === "DISABLED") {
+      const confirmed = await confirmDialog({
+        title: "Suspender usuario",
+        message: "El usuario no podrá iniciar sesión hasta que lo reactives.",
+        confirmLabel: "Suspender",
+        danger: true
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
     setBusy(true);
     setError(null);
     try {
@@ -116,8 +143,11 @@ export function UsersRolesAdmin({ token, currentUserId }: { token: string; curre
         body: JSON.stringify({ status })
       });
       patchUser(userId, { status: data.user.status });
+      toast.success(status === "DISABLED" ? "Usuario suspendido." : "Usuario reactivado.");
     } catch (statusError) {
-      setError(errorText(statusError));
+      const message = errorText(statusError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -145,8 +175,11 @@ export function UsersRolesAdmin({ token, currentUserId }: { token: string; curre
       formEl.reset();
       setShowCreate(false);
       await load();
+      toast.success("Usuario creado.");
     } catch (createError) {
-      setError(errorText(createError));
+      const message = errorText(createError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
