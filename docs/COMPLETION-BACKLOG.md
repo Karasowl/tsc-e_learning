@@ -87,10 +87,10 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [ ] Vista previa del examen como alumno; validación (no guardar single-choice sin correcta).
 - [ ] (Opcional) Reemplazar `RichTextEditor` (execCommand deprecado) por editor moderno (Tiptap/Lexical) con sanitización.
 
-### M9 — Robustez de dominio  ⬜
-- [ ] Completar curso debe considerar **exámenes aprobados**, no solo lecciones (hoy se puede certificar sin pasar el examen final).
-- [ ] Flujo de calificación manual de `OPEN_ENDED`/`SHORT_TEXT` (o excluirlos del builder si no se usan).
+### M9 — Robustez de dominio  ⏳ EN CURSO
+- [x] **Completar curso exige aprobar los exámenes publicados** además de las lecciones (`updateCourseProgress`); no degrada ni borra los completados migrados (preserva `completedAt`/status). Aviso al estudiante "Aprueba el examen para obtener tu diploma". Desplegado.
 - [ ] No marcar progreso en cursos `ARCHIVED`.
+- [ ] Flujo de calificación manual de `OPEN_ENDED`/`SHORT_TEXT` (o excluirlos del builder si no se usan en prod — solo se usaban 3 tipos).
 - [ ] Reanudar curso: exponer "última lección vista" (`lastSeenAt`).
 
 ### M10 — Migración de contenido y cutover  ⬜

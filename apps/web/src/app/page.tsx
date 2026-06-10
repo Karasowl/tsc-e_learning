@@ -972,6 +972,8 @@ export default function Home() {
                       <Award aria-hidden />
                       Emitir diploma
                     </button>
+                  ) : (selectedCourse.enrollment?.progressPercent ?? 0) >= 100 ? (
+                    <p className="empty-state">Aprueba el examen del curso para obtener tu diploma.</p>
                   ) : null}
 
                   {token ? <CourseReviews token={token} courseId={selectedCourse.id} /> : null}

@@ -334,7 +334,28 @@ async function updateCourseProgress(userId: string, courseId: string) {
   ]);
 
   const progressPercent = totalLessons > 0 ? Number(((completedLessons / totalLessons) * 100).toFixed(2)) : 0;
-  const completedAt = totalLessons > 0 && completedLessons >= totalLessons ? new Date() : null;
+  const lessonsDone = totalLessons > 0 && completedLessons >= totalLessons;
+
+  // A course is only "completed" when its lessons are done AND every published
+  // quiz has a passing attempt, so a diploma can't be earned without passing the
+  // exam(s). Courses with no published quiz complete on lessons alone.
+  let quizzesPassed = true;
+  if (lessonsDone) {
+    const quizzes = await getPrisma().quiz.findMany({
+      where: { courseId, status: "PUBLISHED" },
+      select: { id: true }
+    });
+    if (quizzes.length > 0) {
+      const quizIds = quizzes.map((quiz) => quiz.id);
+      const passed = await getPrisma().quizAttempt.findMany({
+        where: { userId, status: "PASSED", quizId: { in: quizIds } },
+        select: { quizId: true },
+        distinct: ["quizId"]
+      });
+      quizzesPassed = passed.length >= quizIds.length;
+    }
+  }
+  const requirementsMet = lessonsDone && quizzesPassed;
 
   const enrollment = await getPrisma().enrollment.findUnique({
     where: {
@@ -353,7 +374,7 @@ async function updateCourseProgress(userId: string, courseId: string) {
     };
   }
 
-  const newlyCompleted = Boolean(completedAt && enrollment.status !== "COMPLETED");
+  const newlyCompleted = Boolean(requirementsMet && enrollment.status !== "COMPLETED");
 
   const updated = await getPrisma().enrollment.update({
     where: {
@@ -364,8 +385,10 @@ async function updateCourseProgress(userId: string, courseId: string) {
     },
     data: {
       progressPercent,
-      completedAt,
-      status: completedAt ? "COMPLETED" : enrollment.status
+      // Never wipe an existing completion nor downgrade status (protects the
+      // already-completed enrollments migrated from WordPress).
+      completedAt: requirementsMet ? enrollment.completedAt ?? new Date() : enrollment.completedAt,
+      status: requirementsMet ? "COMPLETED" : enrollment.status
     }
   });
 
