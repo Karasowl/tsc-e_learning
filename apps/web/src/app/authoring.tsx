@@ -5,6 +5,7 @@ import { ArrowLeft, Boxes, Check, ClipboardList, Download, FilePlus2, FileText, 
 import { RichTextEditor } from "./RichTextEditor";
 import { QuizBuilder } from "./QuizBuilder";
 import { assetFileUrl, authFetch, errorText, uploadAsset } from "./apiClient";
+import { confirmDialog, toast } from "./ui";
 
 type AdminCourse = {
   id: string;
@@ -103,15 +104,24 @@ function CourseManager({ token, isAdmin, onOpen }: { token: string; isAdmin: boo
   }
 
   async function remove(id: string) {
-    if (!window.confirm("¿Eliminar este curso y todo su contenido?")) {
+    const confirmed = await confirmDialog({
+      title: "Eliminar curso",
+      message: "Se eliminará el curso y todo su contenido. Esta acción no se puede deshacer.",
+      confirmLabel: "Eliminar",
+      danger: true
+    });
+    if (!confirmed) {
       return;
     }
     setBusy(true);
     try {
       await authFetch(token, `/admin/courses/${id}`, { method: "DELETE" });
       await load();
+      toast.success("Curso eliminado.");
     } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : String(removeError));
+      const message = removeError instanceof Error ? removeError.message : String(removeError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -239,8 +249,11 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
         })
       });
       setSavedAt(new Date().toLocaleTimeString("es-MX"));
+      toast.success("Curso guardado.");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : String(saveError));
+      const message = saveError instanceof Error ? saveError.message : String(saveError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -260,8 +273,11 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
       });
       patchCourse({ thumbnail: { id: asset.id } });
       setCoverError(false);
+      toast.success("Portada actualizada.");
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : String(uploadError));
+      const message = uploadError instanceof Error ? uploadError.message : String(uploadError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -285,30 +301,48 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
   }
 
   async function removeModule(id: string) {
-    if (!window.confirm("¿Eliminar esta sección y sus clases?")) {
+    const confirmed = await confirmDialog({
+      title: "Eliminar sección",
+      message: "Se eliminará la sección junto con sus clases.",
+      confirmLabel: "Eliminar",
+      danger: true
+    });
+    if (!confirmed) {
       return;
     }
     setBusy(true);
     try {
       await authFetch(token, `/admin/modules/${id}`, { method: "DELETE" });
       await load();
+      toast.success("Sección eliminada.");
     } catch (moduleError) {
-      setError(moduleError instanceof Error ? moduleError.message : String(moduleError));
+      const message = moduleError instanceof Error ? moduleError.message : String(moduleError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
   }
 
   async function removeLesson(lessonId: string) {
-    if (!window.confirm("¿Eliminar esta clase y sus documentos?")) {
+    const confirmed = await confirmDialog({
+      title: "Eliminar clase",
+      message: "Se eliminará la clase junto con sus documentos.",
+      confirmLabel: "Eliminar",
+      danger: true
+    });
+    if (!confirmed) {
       return;
     }
     setBusy(true);
     try {
       await authFetch(token, `/admin/lessons/${lessonId}`, { method: "DELETE" });
       await load();
+      toast.success("Clase eliminada.");
     } catch (lessonError) {
-      setError(lessonError instanceof Error ? lessonError.message : String(lessonError));
+      const message = lessonError instanceof Error ? lessonError.message : String(lessonError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -562,15 +596,24 @@ function EnrollmentManager({ token, courseId }: { token: string; courseId: strin
       });
       await load();
       setResults((current) => (current ? current.map((s) => (s.id === userId ? { ...s, enrolled: true } : s)) : current));
+      toast.success("Acceso concedido al estudiante.");
     } catch (enrollError) {
-      setError(errorText(enrollError));
+      const message = errorText(enrollError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
   }
 
   async function revoke(userId: string) {
-    if (!window.confirm("¿Quitar el acceso de este estudiante al curso?")) {
+    const confirmed = await confirmDialog({
+      title: "Quitar acceso",
+      message: "El estudiante perderá el acceso a este curso.",
+      confirmLabel: "Quitar acceso",
+      danger: true
+    });
+    if (!confirmed) {
       return;
     }
     setBusy(true);
@@ -578,8 +621,11 @@ function EnrollmentManager({ token, courseId }: { token: string; courseId: strin
     try {
       await authFetch(token, `/admin/courses/${courseId}/enrollments/${userId}`, { method: "DELETE" });
       await load();
+      toast.success("Acceso retirado.");
     } catch (revokeError) {
-      setError(errorText(revokeError));
+      const message = errorText(revokeError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -610,8 +656,11 @@ function EnrollmentManager({ token, courseId }: { token: string; courseId: strin
       formEl.reset();
       setShowCreate(false);
       await load();
+      toast.success("Estudiante creado e inscrito.");
     } catch (createError) {
-      setError(errorText(createError));
+      const message = errorText(createError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -873,9 +922,18 @@ function LessonModal({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
 
-  function attemptClose() {
-    if (dirty && !window.confirm("Tienes cambios sin guardar en esta clase. ¿Salir sin guardar?")) {
-      return;
+  async function attemptClose() {
+    if (dirty) {
+      const leave = await confirmDialog({
+        title: "Cambios sin guardar",
+        message: "Tienes cambios sin guardar en esta clase. ¿Salir sin guardar?",
+        confirmLabel: "Salir sin guardar",
+        cancelLabel: "Seguir editando",
+        danger: true
+      });
+      if (!leave) {
+        return;
+      }
     }
     onClose();
   }
@@ -902,8 +960,11 @@ function LessonModal({
       }
       setSaved({ title: title.trim(), body, videoUrl });
       await onSaved();
+      toast.success("Clase guardada.");
     } catch (saveError) {
-      setError(errorText(saveError));
+      const message = errorText(saveError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -919,22 +980,37 @@ function LessonModal({
       const asset = await uploadAsset(token, file, { lessonId });
       setAssets((current) => [...current, { id: asset.id, title: asset.title, mimeType: asset.mimeType }]);
       await onSaved();
+      toast.success("Documento subido.");
     } catch (uploadError) {
-      setError(errorText(uploadError));
+      const message = errorText(uploadError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
   }
 
   async function removeDoc(assetId: string) {
+    const confirmed = await confirmDialog({
+      title: "Eliminar documento",
+      message: "El documento dejará de estar disponible para los estudiantes.",
+      confirmLabel: "Eliminar",
+      danger: true
+    });
+    if (!confirmed) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await authFetch(token, `/admin/assets/${assetId}`, { method: "DELETE" });
       setAssets((current) => current.filter((asset) => asset.id !== assetId));
       await onSaved();
+      toast.success("Documento eliminado.");
     } catch (removeError) {
-      setError(errorText(removeError));
+      const message = errorText(removeError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, GripVertical, Plus, Save, Trash2 } from "lucide-react";
 import { authFetch, errorText } from "./apiClient";
+import { confirmDialog, toast } from "./ui";
 
 const QUESTION_TYPES: { value: string; label: string }[] = [
   { value: "SINGLE_CHOICE", label: "Opción única" },
@@ -97,15 +98,24 @@ export function QuizBuilder({ token, quizId, onBack }: { token: string; quizId: 
   }
 
   async function removeQuestion(id: string) {
-    if (!window.confirm("¿Eliminar esta pregunta?")) {
+    const confirmed = await confirmDialog({
+      title: "Eliminar pregunta",
+      message: "La pregunta se eliminará del examen.",
+      confirmLabel: "Eliminar",
+      danger: true
+    });
+    if (!confirmed) {
       return;
     }
     setBusy(true);
     try {
       await authFetch(token, `/admin/questions/${id}`, { method: "DELETE" });
       await load();
+      toast.success("Pregunta eliminada.");
     } catch (removeError) {
-      setError(errorText(removeError));
+      const message = errorText(removeError);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }

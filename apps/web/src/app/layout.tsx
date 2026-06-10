@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { ConfirmHost, Toaster } from "./ui";
 import "./globals.css";
 
 const inter = Inter({
@@ -23,7 +24,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className={inter.variable}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Toaster />
+        <ConfirmHost />
+      </body>
     </html>
   );
 }

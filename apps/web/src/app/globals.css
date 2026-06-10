@@ -1913,3 +1913,187 @@ label textarea {
   justify-content: flex-end;
   gap: var(--space-8);
 }
+
+/* ===== Toasts ===== */
+.toast-stack {
+  position: fixed;
+  top: var(--space-16);
+  right: var(--space-16);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  position: relative;
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-12) var(--space-12) var(--space-16);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  animation: toast-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.toast-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.toast > span {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.toast-close {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--muted);
+  display: inline-flex;
+}
+
+.toast-close svg {
+  width: 15px;
+  height: 15px;
+}
+
+.toast-close:hover {
+  color: var(--text);
+}
+
+.toast-success {
+  border-left-color: var(--ok);
+}
+.toast-success .toast-icon {
+  color: var(--ok);
+}
+.toast-error {
+  border-left-color: var(--bad);
+}
+.toast-error .toast-icon {
+  color: var(--bad);
+}
+.toast-info {
+  border-left-color: var(--info-fg);
+}
+.toast-info .toast-icon {
+  color: var(--info-fg);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ===== Confirm dialog ===== */
+.confirm-overlay {
+  align-items: center;
+}
+
+.confirm-panel {
+  max-width: 440px;
+}
+
+.confirm-body {
+  padding: var(--space-24) var(--space-24) var(--space-8);
+  display: grid;
+  gap: var(--space-8);
+}
+
+.confirm-body p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.primary-button.danger {
+  background: var(--bad);
+}
+
+.primary-button.danger:hover:not(:disabled) {
+  background: #9f1b12;
+}
+
+/* ===== Skeletons ===== */
+.skeleton {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+  animation: skeleton-shimmer 1.3s infinite;
+}
+
+.skeleton-cover {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  border-radius: 0;
+}
+
+.skeleton-line {
+  height: 12px;
+  width: 100%;
+}
+
+.skeleton-line.lg {
+  height: 16px;
+  width: 70%;
+}
+
+.skeleton-line.sm {
+  height: 10px;
+  width: 45%;
+}
+
+.table-skeleton {
+  display: grid;
+  gap: var(--space-12);
+  padding: var(--space-16);
+}
+
+.table-skeleton-row {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 4), 1fr);
+  gap: var(--space-16);
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after,
+  .toast {
+    animation: none;
+  }
+}

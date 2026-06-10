@@ -33,13 +33,13 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [x] Primitivas pulidas: botones (active press + sombras), inputs/textarea unificados (radio + transición + placeholder), superficies con sombra-sm, tablas (números tabulares + header pegajoso), barra de progreso animada, métricas auto-fit, contraste de nav subido.
 - [ ] (Diferido a M4) Unificar los 3 `StatusPill`/`StatusTag`/`EnrollStatusTag` duplicados en un solo componente + mapa de etiquetas ES — se hace junto con la higiene de enums.
 
-### M2 — Feedback, shell y navegación  ⬜
-- [ ] Sistema de **toasts** (éxito/error/info) y reemplazar banners planos.
-- [ ] **Diálogo de confirmación de marca** (reemplazar `window.confirm` en borrar curso/sección/clase/pregunta/usuario).
-- [ ] **Skeletons / estados de carga** en grids, tablas y detalle (sin layout shift; quitar "Cargando…").
-- [ ] **Topbar** con menú de avatar/perfil (iniciales con color), accesos y "Salir" visible.
-- [ ] **Navegación móvil real**: drawer + hamburguesa; sidebar colapsable; bottom-nav opcional.
-- [ ] Estados vacíos con ilustración/CTA (no `<p>` plano).
+### M2 — Feedback, shell y navegación  ⏳ EN CURSO
+- [x] Sistema de **toasts** (éxito/error/info) — `ui.tsx` (store sin context, montado en `layout.tsx`) + CSS. Cableado en todas las acciones destructivas y guardados (authoring + QuizBuilder).
+- [x] **Diálogo de confirmación de marca** — `confirmDialog()` async reemplaza los 6 `window.confirm` (borrar curso/sección/clase/pregunta, revocar acceso, salir de clase con cambios) + borrar documento.
+- [~] **Skeletons** — primitivas `CardSkeletonGrid`/`TableSkeleton` + CSS listas; falta APLICARLAS en las ramas de carga (catálogo del estudiante, tablas de cursos/usuarios/reporte).
+- [ ] **Topbar** con menú de avatar/perfil (iniciales con color) + "Salir" visible.
+- [ ] **Navegación móvil real**: drawer + hamburguesa; sidebar colapsable.
+- [ ] Estados vacíos con ilustración/CTA (+ aplicar skeletons). Toasts/confirm en usersAdmin (suspender/quitar rol).
 
 ### M3 — Experiencia del estudiante  ⬜
 - [ ] **Reproductor de lección**: navegación Anterior/Siguiente + autoavance + barra de progreso del curso animada; íconos por tipo (video/pdf/quiz).
