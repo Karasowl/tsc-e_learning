@@ -8,6 +8,7 @@ const configSchema = z.object({
   DATABASE_URL: z.string().min(1),
   JWT_SECRET: z.string().min(24).default("dev-secret-change-this-before-production"),
   JWT_EXPIRES_IN: z.string().default("30d"),
+  GOOGLE_CLIENT_ID: z.string().optional(),
   STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
   LOCAL_STORAGE_ROOT: z.string().default("./storage"),
   SMTP_HOST: z.string().optional(),
@@ -31,6 +32,7 @@ export type AppConfig = {
   databaseUrl: string;
   jwtSecret: string;
   jwtExpiresIn: string;
+  googleClientId: string | undefined;
   storageDriver: "local" | "s3";
   localStorageRoot: string;
   smtp: {
@@ -65,6 +67,7 @@ export function readConfig(env = process.env): AppConfig {
     databaseUrl: parsed.DATABASE_URL,
     jwtSecret: parsed.JWT_SECRET,
     jwtExpiresIn: parsed.JWT_EXPIRES_IN,
+    googleClientId: parsed.GOOGLE_CLIENT_ID,
     storageDriver: parsed.STORAGE_DRIVER,
     localStorageRoot: parsed.LOCAL_STORAGE_ROOT,
     smtp: {

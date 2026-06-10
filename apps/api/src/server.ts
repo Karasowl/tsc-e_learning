@@ -81,7 +81,7 @@ export async function buildServer(config: AppConfig) {
 
   await registerAccountRoutes(server);
   await registerAssetRoutes(server, config);
-  await registerAuthRoutes(server);
+  await registerAuthRoutes(server, config);
   await registerCertificateRoutes(server, config);
   await registerCourseAdminRoutes(server);
   await registerCourseRoutes(server);

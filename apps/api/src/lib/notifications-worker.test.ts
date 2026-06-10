@@ -34,6 +34,7 @@ function baseConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     databaseUrl: "postgresql://x",
     jwtSecret: "x".repeat(24),
     jwtExpiresIn: "30d",
+    googleClientId: undefined,
     storageDriver: "local",
     localStorageRoot: "./storage",
     smtp: { host: undefined, port: 587, user: undefined, password: undefined, from: "TSC" },

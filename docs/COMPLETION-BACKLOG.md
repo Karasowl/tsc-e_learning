@@ -56,12 +56,12 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 - [x] Auditoría completa del frontend: el resto ya estaba en español — resultado de quiz (M3 `QuizResult`), summary del reporte (claves ya en español desde el backend), `StatusTag`/`EnrollStatusTag`/`statusEs` (cursos/inscripción/usuarios), selects de estado con opciones en español. No quedan enums crudos visibles.
 - [~] (Opcional, sin impacto visible) unificar `StatusPill`/`StatusTag`/`EnrollStatusTag` en un componente — los 3 ya producen español correcto; se deja como limpieza futura de bajo valor.
 
-### M5 — Autenticación y cuenta (esenciales modernos)  ⏳ EN CURSO
+### M5 — Autenticación y cuenta (esenciales modernos)  ✅ DESPLEGADA (2026-06-10) (falta forgot-password → depende de SMTP M10)
 - [x] **Perfil self-service**: backend `GET/PUT /me` (`apps/api/src/routes/account.ts`) + pantalla "Mi perfil" (avatar de iniciales, email, roles, servicio, último acceso/alta) con edición de nombre+servicio. Verificado en prod.
 - [x] **Cambio de contraseña propio**: `POST /me/password` (verifica la actual con wp-compat) + formulario en "Mi perfil".
 - [x] **Reset por admin (backend)**: `POST /admin/users/:userId/password` (isAdmin). Falta UI en usersAdmin (modal con input) — pendiente menor.
+- [x] **Login con Google** (OIDC) — backend `POST /auth/google` (verifica el ID token con `google-auth-library`; **solo entran cuentas ya existentes y activas**, no auto-registro) + botón GIS en el login. `GOOGLE_CLIENT_ID` en `.env` del VPS + `NEXT_PUBLIC_GOOGLE_CLIENT_ID` en Vercel (no son secretos). Verificado: ruta 400/401 correctas, client id horneado en el bundle. **DEPENDE de que el usuario agregue `https://tsc-capacita.vercel.app` (y luego `capacita.tscseguridadprivada.com.mx`) en "Orígenes de JavaScript autorizados" del cliente OAuth en Google Cloud** para que el botón funcione al hacer clic.
 - [ ] **Recuperar contraseña** (forgot/reset por email con token) — depende de SMTP/Resend (M10).
-- [ ] **Login con Google** (OAuth/OIDC) — credenciales del cliente en `.env` del VPS (NO en repo). Vincular por email.
 
 ### M6 — Seguridad (endurecimiento)  ✅ DESPLEGADA (2026-06-10)
 - [x] JWT con **caducidad** (`JWT_EXPIRES_IN`, default 30d) + **revalidación viva** de `User.status`/roles en cada request (`requireAuth` consulta la BD; roles ya no se "hornean" en el token → revocar rol/suspender surte efecto al instante). Verificado.

@@ -22,7 +22,7 @@ import {
   UserRound,
   X
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { assetFileUrl, downloadAsset } from "./apiClient";
 import { AuthoringView } from "./authoring";
@@ -31,6 +31,7 @@ import { UsersRolesAdmin } from "./usersAdmin";
 import { CardSkeletonGrid, toast } from "./ui";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
 type User = {
   id: string;
@@ -369,6 +370,33 @@ export default function Home() {
     }
   }
 
+  const loginWithGoogle = useCallback(async (credential: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_URL}/auth/google`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ credential })
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({ error: "" }))) as { error?: unknown };
+        throw new Error(
+          typeof body.error === "string" && body.error ? body.error : "No se pudo iniciar sesión con Google"
+        );
+      }
+      const body = (await response.json()) as { token: string; user: User };
+      window.localStorage.setItem("tsc_token", body.token);
+      window.localStorage.setItem("tsc_user", JSON.stringify(body.user));
+      setToken(body.token);
+      setUser(body.user);
+    } catch (googleError) {
+      setError(errorMessage(googleError));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
   async function loadCourse(courseId: string) {
     setError(null);
     const payload = await api<{ course: CourseDetail }>(`/courses/${courseId}`);
@@ -668,6 +696,14 @@ export default function Home() {
             <UserRound aria-hidden />
             {busy ? "Validando" : "Ingresar"}
           </button>
+          {GOOGLE_CLIENT_ID ? (
+            <>
+              <div className="auth-divider">
+                <span>o</span>
+              </div>
+              <GoogleSignIn clientId={GOOGLE_CLIENT_ID} onCredential={loginWithGoogle} />
+            </>
+          ) : null}
         </form>
       </main>
     );
@@ -1182,6 +1218,68 @@ function notificationEventLabel(value: string) {
 
 function notificationStatusLabel(value: string) {
   return NOTIFICATION_STATUS_LABELS[value] ?? humanizeEnum(value);
+}
+
+function GoogleSignIn({
+  clientId,
+  onCredential
+}: {
+  clientId: string;
+  onCredential: (credential: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const w = window as unknown as {
+      google?: {
+        accounts: {
+          id: {
+            initialize: (options: unknown) => void;
+            renderButton: (element: HTMLElement, options: unknown) => void;
+          };
+        };
+      };
+    };
+    function render() {
+      if (!w.google || !containerRef.current) {
+        return;
+      }
+      w.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: (response: { credential?: string }) => {
+          if (response.credential) {
+            onCredential(response.credential);
+          }
+        }
+      });
+      containerRef.current.innerHTML = "";
+      w.google.accounts.id.renderButton(containerRef.current, {
+        theme: "outline",
+        size: "large",
+        text: "continue_with",
+        shape: "rectangular",
+        locale: "es",
+        width: 300
+      });
+    }
+    if (w.google) {
+      render();
+      return;
+    }
+    const existing = document.getElementById("gsi-script");
+    if (existing) {
+      existing.addEventListener("load", render);
+      return () => existing.removeEventListener("load", render);
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.id = "gsi-script";
+    script.addEventListener("load", render);
+    document.head.appendChild(script);
+    return () => script.removeEventListener("load", render);
+  }, [clientId, onCredential]);
+  return <div className="google-signin" ref={containerRef} />;
 }
 
 function initials(name: string) {

@@ -4,14 +4,20 @@ import {
   verifyWordPressPassword
 } from "@tsc-capacita/wp-compat";
 import type { FastifyInstance } from "fastify";
+import { OAuth2Client } from "google-auth-library";
 import { z } from "zod";
+import type { AppConfig } from "../lib/config.js";
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1).max(4096)
 });
 
-export async function registerAuthRoutes(server: FastifyInstance) {
+const googleSchema = z.object({
+  credential: z.string().min(1)
+});
+
+export async function registerAuthRoutes(server: FastifyInstance, config: AppConfig) {
   server.post("/auth/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
 
@@ -71,4 +77,60 @@ export async function registerAuthRoutes(server: FastifyInstance) {
       }
     };
   });
+
+  // Sign-in with Google: only existing, active accounts (admin-provisioned) may
+  // enter — Google is just an alternate way to authenticate, not self-signup.
+  if (config.googleClientId) {
+    const googleClientId = config.googleClientId;
+    const googleClient = new OAuth2Client(googleClientId);
+    server.post(
+      "/auth/google",
+      { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
+      async (request, reply) => {
+        const parsed = googleSchema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply.code(400).send({ error: parsed.error.flatten() });
+        }
+
+        let email: string | undefined;
+        try {
+          const ticket = await googleClient.verifyIdToken({
+            idToken: parsed.data.credential,
+            audience: googleClientId
+          });
+          const tokenPayload = ticket.getPayload();
+          if (tokenPayload?.email && tokenPayload.email_verified) {
+            email = tokenPayload.email.toLowerCase();
+          }
+        } catch {
+          return reply.code(401).send({ error: "No se pudo validar la cuenta de Google" });
+        }
+
+        if (!email) {
+          return reply.code(401).send({ error: "La cuenta de Google no tiene un correo verificado" });
+        }
+
+        const user = await getPrisma().user.findUnique({
+          where: { email },
+          include: { roles: true }
+        });
+
+        if (!user || user.status !== "ACTIVE") {
+          return reply
+            .code(403)
+            .send({ error: "Esta cuenta de Google no tiene acceso. Pídele acceso a tu administrador." });
+        }
+
+        await getPrisma().user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+
+        const roles = user.roles.map((role) => role.role);
+        const token = server.jwt.sign({ sub: user.id, roles });
+
+        return {
+          token,
+          user: { id: user.id, email: user.email, displayName: user.displayName, roles }
+        };
+      }
+    );
+  }
 }
