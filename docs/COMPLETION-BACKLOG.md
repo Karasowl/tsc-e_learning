@@ -64,12 +64,19 @@ Nextend, prerequisitos/drip/become-instructor.
 - ✅ **P0-2 Migración de uploads** — 55 archivos referenciados (118M) copiados al volumen
   `tsc-capacita_api_storage`; `storageKey` ya coincidía con la ruta → sin reescritura de BD.
   **Verificado en prod**: portada `Vector.png` responde HTTP 200 image/png.
-- ⚠️ **P0-3 SMTP** — worker **encendido** y cableado (smtp.hostinger.com:587 TLS, from rh@). PERO la
-  contraseña de rh@ en Bitwarden (8 chars, rev 2025-08-30) **es rechazada (535 auth failed)** → rotada.
-  BLOQUEA el envío real. Falta la contraseña vigente del buzón rh@ (o decidir otro buzón remitente).
+- ✅ **P0-3 SMTP** — RESUELTO. Contraseña vigente de rh@ aplicada al `.env` del VPS; worker encendido;
+  **envío de prueba real aceptado por Hostinger** (smtp.hostinger.com:587 TLS, from "TSC Capacita <rh@>").
+  Pendiente menor: actualizar la contraseña en Bitwarden para continuidad.
 - ✅ **P1-5/6 Pulido** — placeholder de portada de marca + `onError`, copy del login sin jerga, etiquetas
   de tipo de lección/nivel en español. Build limpio, **desplegado a Vercel**.
-- ⬜ **P1-4 Higiene de datos migrados** — pendiente (destructivo: requiere visto bueno antes de borrar).
+- ✅ **Fondo del diploma HTML desacoplado de WordPress** — nueva ruta pública `GET /certificates/
+  diploma-background.jpg` (sirve el jpg empaquetado); `CERTIFICATE_BACKGROUND_URL` ahora apunta al API.
+  Verificado HTTP 200 image/jpeg. (El PDF ya usaba el fondo empaquetado.)
+- ✅ **P1-4 Higiene de datos migrados** — HECHO (con respaldo `pg_dump` previo en VPS `/root/`). Catálogo
+  de 16→6 cursos publicados limpios: borrados 9 cursos basura (0 inscritos), fusionado el duplicado
+  INDUCCION (movido su inscrito único al bueno → 38; dup archivado), renombrados títulos en MAYÚSCULAS.
+  PENDIENTE: "Título de Curso" (13 inscritos) necesita nombre real del usuario; cuentas de instructor de
+  prueba (Ismael Tutor isma@gmail.com, Ismael Admin de prueba) por decidir.
 - ⬜ **P1-7 Validar copy de correos con el cliente** — pendiente (depende de que el SMTP envíe).
 - 👤 **Usuario**: contraseña SMTP vigente; origen OAuth de Google; cutover DNS.
 

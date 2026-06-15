@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { getPrisma } from "@tsc-capacita/db";
 import type { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
@@ -10,7 +11,10 @@ import {
   renderCertificateHtml,
   type CertificateView
 } from "../lib/certificates.js";
-import { renderCertificatePdf } from "../lib/certificate-pdf.js";
+import {
+  renderCertificatePdf,
+  DEFAULT_CERTIFICATE_BACKGROUND_PATH
+} from "../lib/certificate-pdf.js";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
 
 const issueCertificateSchema = z.object({
@@ -224,6 +228,24 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
         courseTitle: certificate.course.title
       }
     };
+  });
+
+  // Public: serves the diploma background image so the HTML view and PDF do not
+  // depend on the legacy WordPress host. Referenced via CSS/<img>, hence no auth.
+  server.get("/certificates/diploma-background.jpg", async (_request, reply) => {
+    const backgroundPath = config.certificateBackgroundPath ?? DEFAULT_CERTIFICATE_BACKGROUND_PATH;
+
+    let bytes: Buffer;
+    try {
+      bytes = await readFile(backgroundPath);
+    } catch {
+      return reply.code(404).send({ error: "Certificate background not found" });
+    }
+
+    return reply
+      .header("content-type", "image/jpeg")
+      .header("cache-control", "public, max-age=86400")
+      .send(bytes);
   });
 }
 
