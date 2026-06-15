@@ -1,6 +1,8 @@
 # API Runtime
 
 This file tracks migrated runtime behavior, separate from extraction/import.
+For how production is operated (email/SMTP, storage, deploy, backups, runbook), see
+[OPERATIONS.md](./OPERATIONS.md).
 
 ## Authentication
 
@@ -59,7 +61,11 @@ All course, quiz, progress, and report routes require `Authorization: Bearer <to
     - fill in the blank with normalized text
   - Marks attempts `PASSED`, `FAILED`, or `EXPIRED`.
   - Writes `QuizAnswer` rows.
-  - Creates pending `NotificationLog` rows when enabled notification rules exist for `QUIZ_PASSED` or `QUIZ_FAILED`.
+  - Creates **one** pending `NotificationLog` per result addressed to the **student + RH copy**
+    (`emitStudentNotification`): `sentTo` = the student's email plus the recipients of any enabled
+    `QUIZ_PASSED`/`QUIZ_FAILED` rules, deduplicated. The log is created **even when no rule exists**, so the
+    student always gets their result (parity with the WordPress per-attempt email). Same pattern for
+    `COURSE_COMPLETED` (see `routes/courses.ts`). `CERTIFICATE_ISSUED` still targets only rule recipients.
 
 ## Certificates
 
@@ -78,7 +84,9 @@ All course, quiz, progress, and report routes require `Authorization: Bearer <to
 - `GET /certificates/:certificateId/html`
   - Returns a printable landscape HTML diploma compatible with the WordPress `diploma-detect.php` layout.
   - Includes student name, course title, folio, verification code, and issue date.
-  - Uses `CERTIFICATE_BACKGROUND_URL` when configured. This should point to the migrated `diploma-fondo-v4.jpg`, whose signatures are embedded in the image.
+  - Uses `CERTIFICATE_BACKGROUND_URL` when configured. In production this points to the API's own
+    `GET /certificates/diploma-background.jpg` route (no WordPress dependency), whose signatures are embedded
+    in the image.
   - Locally smoke-tested against imported certificates.
 
 - `GET /certificates/:certificateId/pdf`
@@ -89,6 +97,11 @@ All course, quiz, progress, and report routes require `Authorization: Bearer <to
 
 - `GET /certificates/verify/:verificationCode`
   - Public certificate verification endpoint.
+
+- `GET /certificates/diploma-background.jpg`
+  - Public route that serves the bundled diploma background (`apps/api/assets/diploma-fondo-v4.jpg`, or
+    `CERTIFICATE_BACKGROUND_PATH` if set). Lets the HTML diploma render its background from the API instead of
+    depending on the (retiring) WordPress site. Returns 404 if the file is missing.
 
 ## Notifications
 
@@ -140,7 +153,11 @@ An in-process scheduled worker (`startNotificationWorker`) auto-delivers `PENDIN
   - Returns a real `.xlsx` (ExcelJS) with a `Reporte estudiantes` sheet and a `Resumen` sheet of status counts.
   - The web report view also offers client-side PDF via a print-optimized HTML window (TSC-branded), mirroring the WordPress pdfMake approach.
 
-## Still Pending
+## Estado (2026-06-15)
 
-- Full frontend screens for the operational LMS.
-- Production deployment (Vercel web + Dockerized API/Postgres on a VPS) and DNS cutover.
+Producción **desplegada y operativa**: web en Vercel, API + Postgres + storage en el VPS (ver
+[OPERATIONS.md](./OPERATIONS.md)). Uploads migrados, SMTP de Hostinger funcionando (correo al estudiante + RH),
+catálogo limpio (5 cursos), diploma con su fondo servido por el API.
+
+Pendiente (tareas del usuario): origen OAuth de Google y **cutover de DNS** de `capacita` → Vercel. Opcionales
+2026: recuperar contraseña por email (ya viable con SMTP), drag&drop de autoría, ruteo por URL/deep-links.

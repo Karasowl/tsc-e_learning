@@ -1,5 +1,8 @@
 # Deployment
 
+> Para el **estado vivo** y el runbook diario (correos/SMTP, storage, respaldos, recetas), ver
+> [OPERATIONS.md](./OPERATIONS.md). Este archivo describe la forma del despliegue y el cutover.
+
 Shape: **web on Vercel**, **API + PostgreSQL + storage on the Hostinger VPS**
 (`82.25.95.86`, Ubuntu 24.04, Docker). The API is routed by the VPS's existing
 **Traefik** reverse proxy (automatic HTTPS via its `letsencrypt` resolver). The
@@ -61,11 +64,11 @@ Re-runnable for the final delta import at cutover. See
 
 ## 4. Vercel: deploy the web
 
-The Vercel CLI is already authenticated on the dev machine.
+The Vercel CLI is already authenticated on the dev machine. The project is linked at the repo root
+(`.vercel/`), so deploy from there:
 
 ```bash
-cd apps/web
-vercel deploy --prod            # or link the repo in the Vercel dashboard
+vercel deploy --prod --yes      # from the repo root (uploads the working tree, incl. uncommitted changes)
 ```
 
 - Set env `NEXT_PUBLIC_API_URL=https://api-capacita.tscseguridadprivada.com.mx`.
