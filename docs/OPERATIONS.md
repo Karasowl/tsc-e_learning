@@ -51,6 +51,10 @@ panel de Hostinger y cambiar `SMTP_USER`/`SMTP_FROM`.)
   reglas habilitadas). Se crea **aunque no exista ninguna regla** configurada (el alumno siempre recibe).
   Lógica en `apps/api/src/lib/notifications.ts` → `emitStudentNotification`, invocada desde
   `routes/quizzes.ts` y `routes/courses.ts`.
+  - Las reglas de **copia a RH** (`rh@`) para `QUIZ_PASSED`/`QUIZ_FAILED`/`COURSE_COMPLETED` están
+    **creadas y habilitadas** en `NotificationRule` (editables en el admin de notificaciones). Sin esas
+    reglas, el correo iría solo al alumno. Nota: con las 3 activas, RH recibe copia de **cada intento** de
+    examen; si es demasiado volumen, desactivar las de `QUIZ_*` y dejar solo `COURSE_COMPLETED`.
 - `CERTIFICATE_ISSUED`: sigue dirigido solo a los `recipients` de regla (no al alumno).
 
 ### Worker de entrega
