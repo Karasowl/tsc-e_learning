@@ -24,6 +24,57 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 
 ---
 
+## AUDITORÍA DE PARIDAD (2026-06-15) — corrección de realidad vs WordPress
+> Resultado de un análisis de 5 agentes (funciones reales del WP en el dump SQL/tema hijo + diseño +
+> backend/frontend verificados **contra código** + diff visual de screenshots). Veredicto: la app nueva
+> está **por encima** del WP en casi todo el núcleo; faltan estas cosas para paridad/go-live real:
+
+**P0 (bloquean paridad / cutover):**
+1. **Correo de resultado de examen AL ESTUDIANTE por intento** — REGRESIÓN real frente al WP, antes
+   marcada como "hecha". Hoy `logQuizOutcome` (quizzes.ts:447-471) y `logCourseCompleted`
+   (courses.ts:270-294) crean `NotificationLog` con `sentTo = rule.recipients` (destinatarios fijos del
+   admin) y **nunca** al email del estudiante; si no hay regla, no se envía nada. El WP enviaba al alumno
+   APROBADO/REPROBADO cada intento (>200 usermeta `correo_enviado_attempt_N` lo prueban). (M)
+2. **Migrar uploads del WP (~669MB) + reescribir URLs** — portadas rotas/negras en el catálogo (el asset
+   apunta a un blob inexistente; el fallback BookOpen solo aplica si `thumbnail` es null) y PDFs como URL
+   cruda wp-content en el cuerpo de lección; subir `diploma-fondo-v4.jpg` real. (L)
+3. **SMTP real + encender worker** — worker apagado, notifs PENDING; sin esto no sale ningún correo. (S)
+
+**P1:**
+4. **Higiene de datos migrados** — cursos duplicados por mayúsculas ("INDUCCION" vs "Induccion"),
+   instructores duplicados, cursos basura "Nuevo curso", y conteo "0 secciones/0 clases/0 exámenes" en
+   cursos con contenido (contenido migrado sin vincular por FK; el `_count` de Prisma es correcto). (M)
+5. **Placeholder de portada de marca + `onError`** (rectángulo negro → fallback elegante). (S)
+6. **Quitar jerga WP filtrada al usuario**: copy técnico del login, folio de diploma con prefijo "WP-149",
+   URLs wp-content visibles. (S)
+7. **Validar copy/destinatarios de correos con el cliente**. (S)
+
+**P2 (deseable 2026, NO brecha de paridad):** forgot-password (el WP lo tenía **deshabilitado a
+propósito** → no rompe paridad), drag&drop real, etiquetas de tipo de lección crudas ("TEXT"), render del
+PDF del reporte, reemplazo del RichTextEditor (execCommand), pulido de marca (emojis del theme toggle, etc.).
+
+**Confirmado FUERA DE ALCANCE (NO son brechas — no se usaban en prod del WP):** OPEN_ENDED/SHORT_TEXT con
+calificación manual (solo 3 tipos reales), builder de plantillas de diploma y revocación de certificado,
+motor de puntos GamiPress, marketplace/pagos/withdrawals, Q&A/anuncios/wishlist/reseñas, social login
+Nextend, prerequisitos/drip/become-instructor.
+
+### Estado de la iteración (2026-06-15)
+- ✅ **P0-1 Correo al estudiante + copia a RH** — implementado (un solo `NotificationLog` con `sentTo`
+  dedup = alumno + recipients de reglas; se crea aunque no haya regla), 12 tests verdes, **desplegado** al VPS.
+- ✅ **P0-2 Migración de uploads** — 55 archivos referenciados (118M) copiados al volumen
+  `tsc-capacita_api_storage`; `storageKey` ya coincidía con la ruta → sin reescritura de BD.
+  **Verificado en prod**: portada `Vector.png` responde HTTP 200 image/png.
+- ⚠️ **P0-3 SMTP** — worker **encendido** y cableado (smtp.hostinger.com:587 TLS, from rh@). PERO la
+  contraseña de rh@ en Bitwarden (8 chars, rev 2025-08-30) **es rechazada (535 auth failed)** → rotada.
+  BLOQUEA el envío real. Falta la contraseña vigente del buzón rh@ (o decidir otro buzón remitente).
+- ✅ **P1-5/6 Pulido** — placeholder de portada de marca + `onError`, copy del login sin jerga, etiquetas
+  de tipo de lección/nivel en español. Build limpio, **desplegado a Vercel**.
+- ⬜ **P1-4 Higiene de datos migrados** — pendiente (destructivo: requiere visto bueno antes de borrar).
+- ⬜ **P1-7 Validar copy de correos con el cliente** — pendiente (depende de que el SMTP envíe).
+- 👤 **Usuario**: contraseña SMTP vigente; origen OAuth de Google; cutover DNS.
+
+---
+
 ## MILESTONES
 
 ### M1 — Base de diseño (el mayor salto visual)  ✅ DESPLEGADA (2026-06-10)
@@ -111,7 +162,8 @@ reproductor de curso, resultados de examen claros) y con la seguridad endurecida
 ---
 
 ## YA HECHO (referencia — no rehacer)
-Auth login (compat WP), CRUD cursos/módulos/clases, builder de exámenes (8 tipos, grading completo incl. MATCHING/ORDERING), tomar exámenes (todos los tipos), reviews con moderación, directorio de instructores, panel de aprobados, inscripción gestionada por admin, admin de roles/permisos, certificados (folio + verificación pública + PDF server-side), reporte de instructor + export Excel/PDF, worker de notificaciones SMTP in-process, marca TSC, tokens de diseño base, catálogo de tarjetas, fix CORS, fix SHORT_TEXT grading, fix storage absoluto, botón Editar curso, modal de clase con guardas.
+Auth login (compat WP), CRUD cursos/módulos/clases, builder de exámenes (8 tipos, grading completo incl. MATCHING/ORDERING), tomar exámenes (todos los tipos), reviews con moderación, directorio de instructores, panel de aprobados, inscripción gestionada por admin, admin de roles/permisos, certificados (folio + verificación pública + PDF server-side), reporte de instructor + export Excel/PDF, worker de notificaciones SMTP in-process (OJO: hoy NO envía al
+estudiante ni está encendido — ver AUDITORÍA P0-1/P0-3), marca TSC, tokens de diseño base, catálogo de tarjetas, fix CORS, fix SHORT_TEXT grading, fix storage absoluto, botón Editar curso, modal de clase con guardas.
 
 ## FUERA DE ALCANCE (decisiones, NO son brechas)
 Assignments/tareas, Q&A público, anuncios, wishlist, marketplace/ecommerce/pagos/withdrawals, social share, prerequisitos, drip content, become-instructor. Ninguno tenía uso en producción (estaban ocultos por CSS en Tutor). NO construir salvo que el usuario lo pida.

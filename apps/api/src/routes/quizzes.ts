@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { gradeQuizSubmission, type GradingQuestion, type SubmittedAnswer } from "../lib/grading.js";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
+import { emitStudentNotification } from "../lib/notifications.js";
 
 const startAttemptSchema = z.object({
   quizId: z.string().min(1)
@@ -264,6 +265,7 @@ export async function registerQuizRoutes(server: FastifyInstance) {
     await logQuizOutcome(updatedAttempt.id, attempt.quiz.courseId, auth.userId, passed, {
       quizId: attempt.quizId,
       quizTitle: attempt.quiz.title,
+      courseTitle: attempt.quiz.course.title,
       scorePercent: grade.scorePercent,
       passingScorePercent
     });
@@ -443,32 +445,15 @@ async function logQuizOutcome(
   passed: boolean,
   payload: Record<string, unknown>
 ) {
-  const eventType = passed ? "QUIZ_PASSED" : "QUIZ_FAILED";
-  const rules = await getPrisma().notificationRule.findMany({
-    where: {
-      eventType,
-      enabled: true
+  await emitStudentNotification({
+    eventType: passed ? "QUIZ_PASSED" : "QUIZ_FAILED",
+    userId,
+    courseId,
+    payload: {
+      ...payload,
+      attemptId
     }
   });
-
-  await Promise.all(
-    rules.map((rule) =>
-      getPrisma().notificationLog.create({
-        data: {
-          eventType,
-          userId,
-          courseId,
-          payload: {
-            ...payload,
-            attemptId,
-            ruleId: rule.id
-          },
-          sentTo: rule.recipients,
-          status: "PENDING"
-        }
-      })
-    )
-  );
 }
 
 function serializeAttempt(attempt: {

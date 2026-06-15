@@ -46,6 +46,7 @@ type CourseSummary = {
   slug: string;
   excerpt: string | null;
   status: string;
+  level: string | null;
   teacher: { displayName: string } | null;
   thumbnail: { id: string } | null;
   enrolled: boolean;
@@ -220,6 +221,18 @@ export default function Home() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogFilter, setCatalogFilter] = useState<"all" | "in-progress" | "not-started" | "completed">("all");
+  // Ids de cursos cuya portada migrada no cargó: caemos al placeholder de marca.
+  const [coverFailed, setCoverFailed] = useState<Set<string>>(new Set());
+  const markCoverFailed = useCallback((courseId: string) => {
+    setCoverFailed((prev) => {
+      if (prev.has(courseId)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.add(courseId);
+      return next;
+    });
+  }, []);
   const [reportQuery, setReportQuery] = useState("");
   const [reportStatusFilter, setReportStatusFilter] = useState("");
   const [reportSort, setReportSort] = useState<{ key: ReportSortKey; dir: "asc" | "desc" }>({ key: "studentName", dir: "asc" });
@@ -726,7 +739,7 @@ export default function Home() {
         <section className="login-copy">
           <img className="brand-logo" src="/tsc-logo.png" alt="TSC Private Security Consulting" />
           <h1>Capacitación TSC</h1>
-          <p>Tu plataforma de formación: cursos, evaluaciones y diplomas, en un solo lugar.</p>
+          <p>Plataforma de capacitación de TSC. Inicia sesión para continuar tu formación en seguridad privada.</p>
           <dl>
             <div>
               <dt>Aprende a tu ritmo</dt>
@@ -908,6 +921,9 @@ export default function Home() {
                     <div>
                       <p className="eyebrow">{selectedCourse.teacher?.displayName ?? "TSC Capacitación"}</p>
                       <h2>{selectedCourse.title}</h2>
+                      {courseLevelLabel(selectedCourse.level) ? (
+                        <span className="course-level-chip">Nivel {courseLevelLabel(selectedCourse.level)}</span>
+                      ) : null}
                     </div>
                     <div className="completion-chip">{selectedCourse.enrollment?.progressPercent ?? 0}%</div>
                   </div>
@@ -988,19 +1004,13 @@ export default function Home() {
               </div>
               {continueCourse ? (
                 <div className="continue-card">
-                  <div className="continue-cover">
-                    {continueCourse.thumbnail ? (
-                      <img
-                        src={assetFileUrl(continueCourse.thumbnail.id)}
-                        alt=""
-                        onError={(event) => {
-                          event.currentTarget.style.display = "none";
-                        }}
-                      />
-                    ) : (
-                      <BookOpen aria-hidden />
-                    )}
-                  </div>
+                  <CourseCover
+                    thumbnail={continueCourse.thumbnail}
+                    title={continueCourse.title}
+                    failed={coverFailed.has(continueCourse.id)}
+                    onFailed={() => markCoverFailed(continueCourse.id)}
+                    variant="continue"
+                  />
                   <div className="continue-body">
                     <p className="eyebrow">Continuar aprendiendo</p>
                     <strong>{continueCourse.title}</strong>
@@ -1061,19 +1071,13 @@ export default function Home() {
                       type="button"
                       aria-label={`Abrir curso ${course.title}`}
                     >
-                      <div className="course-card-cover">
-                        {course.thumbnail ? (
-                          <img
-                            src={assetFileUrl(course.thumbnail.id)}
-                            alt=""
-                            onError={(event) => {
-                              event.currentTarget.style.display = "none";
-                            }}
-                          />
-                        ) : (
-                          <BookOpen aria-hidden />
-                        )}
-                      </div>
+                      <CourseCover
+                        thumbnail={course.thumbnail}
+                        title={course.title}
+                        failed={coverFailed.has(course.id)}
+                        onFailed={() => markCoverFailed(course.id)}
+                        variant="card"
+                      />
                       <div className="course-card-body">
                         <strong>{course.title}</strong>
                         <small className="muted">{course.teacher?.displayName ?? "TSC Capacitación"}</small>
@@ -1511,6 +1515,35 @@ function NavButton({
   );
 }
 
+function CourseCover({
+  thumbnail,
+  title,
+  failed,
+  onFailed,
+  variant
+}: {
+  thumbnail: { id: string } | null;
+  title: string;
+  failed: boolean;
+  onFailed: () => void;
+  variant: "card" | "continue";
+}) {
+  const coverClass = variant === "continue" ? "continue-cover" : "course-card-cover";
+  if (thumbnail && !failed) {
+    return (
+      <div className={coverClass}>
+        <img src={assetFileUrl(thumbnail.id)} alt="" onError={onFailed} />
+      </div>
+    );
+  }
+  return (
+    <div className={`${coverClass} course-cover-fallback`}>
+      <BookOpen aria-hidden />
+      {variant === "card" ? <span className="course-cover-fallback-title">{title}</span> : null}
+    </div>
+  );
+}
+
 function ProgressBar({ value }: { value: number }) {
   const percent = Math.max(0, Math.min(100, value));
   return (
@@ -1842,13 +1875,36 @@ function lessonKindLabel(lesson: { kind: string; videoUrl: string | null }) {
   if (lesson.videoUrl || lesson.kind === "VIDEO") {
     return "Video";
   }
-  switch (lesson.kind) {
+  switch (lesson.kind?.toUpperCase()) {
     case "ASSIGNMENT":
       return "Tarea";
     case "QUIZ":
-      return "Evaluación";
+      return "Examen";
+    case "TEXT":
+    case "LESSON":
+      return "Lección";
     default:
       return "Lección";
+  }
+}
+
+// Mapea el nivel del curso (que puede venir migrado en inglés o como enum crudo)
+// a una etiqueta en español. Si es texto libre desconocido, lo devuelve tal cual.
+function courseLevelLabel(level: string | null | undefined): string | null {
+  if (!level) {
+    return null;
+  }
+  switch (level.trim().toUpperCase()) {
+    case "BEGINNER":
+    case "BASIC":
+      return "Básico";
+    case "INTERMEDIATE":
+      return "Intermedio";
+    case "ADVANCED":
+    case "EXPERT":
+      return "Avanzado";
+    default:
+      return level;
   }
 }
 

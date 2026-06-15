@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
+import { emitStudentNotification } from "../lib/notifications.js";
 
 const courseRefSchema = z.object({
   courseRef: z.string().min(1)
@@ -268,30 +269,12 @@ export async function registerCourseRoutes(server: FastifyInstance) {
 }
 
 async function logCourseCompleted(userId: string, courseId: string, courseTitle: string) {
-  const rules = await getPrisma().notificationRule.findMany({
-    where: {
-      eventType: "COURSE_COMPLETED",
-      enabled: true
-    }
+  await emitStudentNotification({
+    eventType: "COURSE_COMPLETED",
+    userId,
+    courseId,
+    payload: { courseTitle }
   });
-
-  await Promise.all(
-    rules.map((rule) =>
-      getPrisma().notificationLog.create({
-        data: {
-          eventType: "COURSE_COMPLETED",
-          userId,
-          courseId,
-          payload: {
-            ruleId: rule.id,
-            courseTitle
-          },
-          sentTo: rule.recipients,
-          status: "PENDING"
-        }
-      })
-    )
-  );
 }
 
 function courseAccessWhere(auth: AuthContext): Prisma.CourseWhereInput {
