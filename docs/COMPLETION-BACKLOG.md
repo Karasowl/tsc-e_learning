@@ -75,8 +75,11 @@ Nextend, prerequisitos/drip/become-instructor.
 - ✅ **P1-4 Higiene de datos migrados** — HECHO (con respaldo `pg_dump` previo en VPS `/root/`). Catálogo
   de 16→6 cursos publicados limpios: borrados 9 cursos basura (0 inscritos), fusionado el duplicado
   INDUCCION (movido su inscrito único al bueno → 38; dup archivado), renombrados títulos en MAYÚSCULAS.
-  PENDIENTE: "Título de Curso" (13 inscritos) necesita nombre real del usuario; cuentas de instructor de
-  prueba (Ismael Tutor isma@gmail.com, Ismael Admin de prueba) por decidir.
+  "Título de Curso" RESUELTO: era una **plantilla de prueba** (descripción = enlace a google.com, examen
+  "Título del Éxamen" con tilde mal puesta, dueño ismael.sg@) con ~10 alumnos reales que la completaron →
+  **ARCHIVADA** (reversible; registros intactos). **Catálogo público final = 5 cursos reales.**
+  PENDIENTE menor: cuentas de instructor de prueba (Ismael Tutor isma@gmail.com, Ismael Admin de prueba)
+  por decidir. SMTP: entrega real **confirmada por el usuario** (correo recibido en rh@).
 - ⬜ **P1-7 Validar copy de correos con el cliente** — pendiente (depende de que el SMTP envíe).
 - 👤 **Usuario**: contraseña SMTP vigente; origen OAuth de Google; cutover DNS.
 
