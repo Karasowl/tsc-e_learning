@@ -97,11 +97,18 @@ Código del transporte: `apps/api/src/lib/email.ts` (nodemailer; `secure` solo e
 
 ## 5. Despliegue
 
-**Web (Vercel)** — desde la raíz del repo (ahí está `.vercel/`):
+**Web (Vercel)** — el proyecto `tsc-capacita` tiene `rootDirectory=null`, así que el deploy se lanza
+**desde `apps/web`** (no desde la raíz): el CLI detecta el workspace pnpm e incluye el contexto del
+monorepo. El árbol del repo supera el límite de archivos de la subida normal, por eso `--archive=tgz`:
 ```bash
-vercel deploy --prod --yes
+# vínculo (si .vercel/ no existe o apunta a otro proyecto):
+vercel link --scope avanxia-labs --project tsc-capacita --yes
+cp .vercel/project.json apps/web/.vercel/project.json   # el deploy corre desde apps/web
+cd apps/web && vercel deploy --prod --yes --scope avanxia-labs --archive=tgz
 ```
 `vercel` sube el árbol de trabajo (incluye cambios sin commitear). `NEXT_PUBLIC_API_URL` ya está en el env.
+⚠️ No uses `vercel deploy` desde la raíz sin `rootDirectory`: crea un proyecto nuevo equivocado
+(`tsc-e_learning`) y falla con "No Next.js version detected".
 
 **API (VPS)** — el repo no tiene remoto git; se sincroniza por SSH (scp/rsync de `apps/api/src` y, si cambió,
 `packages/db`), luego rebuild del contenedor:

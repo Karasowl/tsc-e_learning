@@ -1,9 +1,10 @@
 "use client";
 
 import { ComponentType, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Boxes, Check, ClipboardList, Download, FilePlus2, FileText, FolderPlus, GraduationCap, ImagePlus, LayoutList, Paperclip, Pencil, Plus, RefreshCw, Save, Search, Trash2, UploadCloud, UserPlus, Users, X } from "lucide-react";
+import { ArrowLeft, Boxes, Check, ClipboardList, Download, FilePlus2, FileText, FolderPlus, GraduationCap, ImagePlus, LayoutList, Paperclip, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, UploadCloud, UserPlus, Users, X } from "lucide-react";
 import { RichTextEditor } from "./RichTextEditor";
 import { QuizBuilder } from "./QuizBuilder";
+import { ReviewsModeration } from "./panels";
 import { assetFileUrl, authFetch, downloadAsset, errorText, uploadAsset } from "./apiClient";
 import { confirmDialog, toast } from "./ui";
 
@@ -55,7 +56,7 @@ export function AuthoringView({ token, isAdmin }: { token: string; isAdmin: bool
   const [editingId, setEditingId] = useState<string | null>(null);
 
   if (editingId) {
-    return <CourseEditor token={token} courseId={editingId} onBack={() => setEditingId(null)} />;
+    return <CourseEditor token={token} courseId={editingId} isAdmin={isAdmin} onBack={() => setEditingId(null)} />;
   }
   return <CourseManager token={token} isAdmin={isAdmin} onOpen={setEditingId} />;
 }
@@ -201,13 +202,13 @@ function CourseManager({ token, isAdmin, onOpen }: { token: string; isAdmin: boo
   );
 }
 
-function CourseEditor({ token, courseId, onBack }: { token: string; courseId: string; onBack: () => void }) {
+function CourseEditor({ token, courseId, isAdmin, onBack }: { token: string; courseId: string; isAdmin: boolean; onBack: () => void }) {
   const [course, setCourse] = useState<EditorCourse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"content" | "students">("content");
+  const [tab, setTab] = useState<"content" | "students" | "reviews">("content");
   const [lessonModal, setLessonModal] = useState<{ moduleId: string; lesson?: EditorLesson } | null>(null);
   const [coverError, setCoverError] = useState(false);
   const [savedSnapshot, setSavedSnapshot] = useState<{
@@ -389,6 +390,30 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
     }
   }
 
+  async function removeQuiz(quizId: string) {
+    const confirmed = await confirmDialog({
+      title: "Eliminar examen",
+      message: "Se eliminará el examen junto con sus preguntas e intentos de los estudiantes.",
+      confirmLabel: "Eliminar",
+      danger: true
+    });
+    if (!confirmed) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await authFetch(token, `/admin/quizzes/${quizId}`, { method: "DELETE" });
+      await load();
+      toast.success("Examen eliminado.");
+    } catch (quizError) {
+      const message = quizError instanceof Error ? quizError.message : String(quizError);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const dirty = Boolean(
     course &&
       savedSnapshot &&
@@ -475,10 +500,17 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
         <button className={`tab-button ${tab === "students" ? "active" : ""}`} onClick={() => setTab("students")} type="button">
           <Users aria-hidden /> Estudiantes con acceso
         </button>
+        {isAdmin ? (
+          <button className={`tab-button ${tab === "reviews" ? "active" : ""}`} onClick={() => setTab("reviews")} type="button">
+            <Star aria-hidden /> Reseñas
+          </button>
+        ) : null}
       </div>
 
       {tab === "students" ? (
         <EnrollmentManager token={token} courseId={course.id} />
+      ) : tab === "reviews" ? (
+        <ReviewsModeration token={token} courseId={course.id} />
       ) : (
         <>
       <div className="editor-grid">
@@ -566,9 +598,14 @@ function CourseEditor({ token, courseId, onBack }: { token: string; courseId: st
           {module.quizzes.length > 0 ? (
             <div className="quiz-list">
               {module.quizzes.map((quiz) => (
-                <button key={quiz.id} className="quiz-list-item" onClick={() => setEditingQuizId(quiz.id)} type="button">
-                  <ClipboardList aria-hidden /> {quiz.title}
-                </button>
+                <div className="quiz-list-row" key={quiz.id}>
+                  <button className="quiz-list-item" onClick={() => setEditingQuizId(quiz.id)} type="button">
+                    <ClipboardList aria-hidden /> {quiz.title}
+                  </button>
+                  <button className="icon-button" disabled={busy} onClick={() => void removeQuiz(quiz.id)} title="Eliminar examen" type="button">
+                    <Trash2 aria-hidden />
+                  </button>
+                </div>
               ))}
             </div>
           ) : null}

@@ -166,6 +166,32 @@ export async function registerReviewRoutes(server: FastifyInstance) {
 
     return { review: serializeReview(review) };
   });
+
+  // Admin moderation: list every review of a course (including HIDDEN/PENDING),
+  // with id + status so the editor can show toggle controls. The public GET only
+  // returns APPROVED reviews and omits ids on purpose.
+  server.get("/admin/courses/:courseId/reviews", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+
+    if (!isAdmin(auth)) {
+      return reply.code(403).send({ error: "Admin role required" });
+    }
+
+    const params = courseParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: params.error.flatten() });
+    }
+
+    const reviews = await getPrisma().courseReview.findMany({
+      where: { courseId: params.data.courseId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    return { reviews: reviews.map(serializeReview) };
+  });
 }
 
 function serializeReview(review: {

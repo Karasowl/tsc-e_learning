@@ -113,6 +113,86 @@ function Stars({ value }: { value: number }) {
   );
 }
 
+type ManagedReview = {
+  id: string;
+  rating: number | null;
+  body: string | null;
+  authorName: string;
+  status: string;
+  createdAt: string;
+};
+
+export function ReviewsModeration({ token, courseId }: { token: string; courseId: string }) {
+  const [reviews, setReviews] = useState<ManagedReview[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    setError(null);
+    try {
+      const data = await authFetch<{ reviews: ManagedReview[] }>(token, `/admin/courses/${courseId}/reviews`);
+      setReviews(data.reviews);
+    } catch (loadError) {
+      setError(errorText(loadError));
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId]);
+
+  async function setStatus(id: string, status: "APPROVED" | "HIDDEN") {
+    setBusy(true);
+    try {
+      await authFetch(token, `/admin/reviews/${id}`, { method: "PUT", body: JSON.stringify({ status }) });
+      await load();
+      toast.success(status === "HIDDEN" ? "Reseña oculta." : "Reseña visible de nuevo.");
+    } catch (moderateError) {
+      toast.error(errorText(moderateError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="data-section">
+      <div className="section-header">
+        <h3>Reseñas del curso</h3>
+      </div>
+      {error ? <p className="error-line">{error}</p> : null}
+      {reviews.length === 0 ? (
+        <p className="empty-state">Este curso aún no tiene reseñas.</p>
+      ) : (
+        <div className="review-list">
+          {reviews.map((review) => (
+            <div className={`review-item${review.status === "HIDDEN" ? " is-hidden" : ""}`} key={review.id}>
+              <div className="review-item-head">
+                <UserRound aria-hidden />
+                <strong>{review.authorName}</strong>
+                <Stars value={review.rating ?? 0} />
+                {review.status === "HIDDEN" ? <span className="muted"><small>· Oculta</small></span> : null}
+              </div>
+              {review.body ? <p>{review.body}</p> : null}
+              <div className="quiz-actions">
+                {review.status === "HIDDEN" ? (
+                  <button className="secondary-button" disabled={busy} onClick={() => void setStatus(review.id, "APPROVED")} type="button">
+                    Mostrar
+                  </button>
+                ) : (
+                  <button className="ghost-button" disabled={busy} onClick={() => void setStatus(review.id, "HIDDEN")} type="button">
+                    Ocultar
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 type DirectoryTeacher = {
   id: string;
   displayName: string;

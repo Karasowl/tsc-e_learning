@@ -702,6 +702,25 @@ export default function Home() {
     }
   }
 
+  async function retryFailedNotifications() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { requeued } = await api<{ requeued: number }>("/notifications/retry", { method: "POST", body: "{}" });
+      if (requeued > 0) {
+        await api("/notifications/process?limit=100", { method: "POST", body: "{}" });
+        toast.success(`${requeued} correo${requeued === 1 ? "" : "s"} reencolado${requeued === 1 ? "" : "s"} para reenvío.`);
+      } else {
+        toast.info("No hay correos fallidos por reintentar.");
+      }
+      await loadNotifications();
+    } catch (notificationError) {
+      setError(errorMessage(notificationError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function toggleTheme() {
     setTheme((current) => {
       const next = current === "dark" ? "light" : "dark";
@@ -780,6 +799,7 @@ export default function Home() {
               <GoogleSignIn clientId={GOOGLE_CLIENT_ID} onCredential={loginWithGoogle} />
             </>
           ) : null}
+          <DiplomaVerifier />
         </form>
       </main>
     );
@@ -1299,10 +1319,16 @@ export default function Home() {
             <div className="notification-panel">
               <div className="section-header">
                 <h2>Logs</h2>
-                <button className="secondary-button" disabled={busy} onClick={processNotifications} type="button">
-                  <RefreshCw aria-hidden />
-                  Procesar pendientes
-                </button>
+                <div className="quiz-actions">
+                  <button className="ghost-button" disabled={busy} onClick={retryFailedNotifications} type="button">
+                    <RefreshCw aria-hidden />
+                    Reintentar fallidos
+                  </button>
+                  <button className="secondary-button" disabled={busy} onClick={processNotifications} type="button">
+                    <RefreshCw aria-hidden />
+                    Procesar pendientes
+                  </button>
+                </div>
               </div>
               <div className="rule-list">
                 {notificationRules.map((rule) => (
@@ -1432,6 +1458,79 @@ function GoogleSignIn({
     return () => script.removeEventListener("load", render);
   }, [clientId, onCredential]);
   return <div className="google-signin" ref={containerRef} />;
+}
+
+type VerifyResult =
+  | { valid: true; folio: string; issuedAt: string; studentName: string; courseTitle: string }
+  | { valid: false };
+
+function DiplomaVerifier() {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<VerifyResult | null>(null);
+
+  async function verify(event: FormEvent) {
+    event.preventDefault();
+    const trimmed = code.trim();
+    if (!trimmed) {
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    try {
+      const response = await fetch(`${API_URL}/certificates/verify/${encodeURIComponent(trimmed)}`);
+      if (response.ok) {
+        const data = (await response.json()) as { certificate: Omit<VerifyResult & { valid: true }, "valid"> };
+        setResult({ valid: true, ...data.certificate });
+      } else {
+        setResult({ valid: false });
+      }
+    } catch {
+      setResult({ valid: false });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button className="ghost-button verify-toggle" onClick={() => setOpen(true)} type="button">
+        <ShieldCheck aria-hidden /> Verificar un diploma
+      </button>
+    );
+  }
+
+  return (
+    <div className="verify-panel">
+      <div className="panel-heading">
+        <Award aria-hidden />
+        <div>
+          <p className="eyebrow">Validación pública</p>
+          <h2>Verificar diploma</h2>
+        </div>
+      </div>
+      <form onSubmit={verify}>
+        <label>
+          Código de verificación
+          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Aparece al pie del diploma" required />
+        </label>
+        <button className="primary-button" disabled={busy} type="submit">
+          <Check aria-hidden /> {busy ? "Verificando" : "Verificar"}
+        </button>
+      </form>
+      {result?.valid === true ? (
+        <div className="verify-result ok">
+          <p><strong>Diploma auténtico</strong></p>
+          <p>{result.studentName}</p>
+          <p className="muted">{result.courseTitle}</p>
+          <p className="muted"><small>Folio {result.folio} · {new Date(result.issuedAt).toLocaleDateString("es-MX")}</small></p>
+        </div>
+      ) : result?.valid === false ? (
+        <p className="error-line">No encontramos un diploma con ese código.</p>
+      ) : null}
+    </div>
+  );
 }
 
 function reportSortValue(row: ReportRow, key: ReportSortKey): number | string {

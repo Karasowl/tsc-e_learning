@@ -1189,6 +1189,45 @@ label textarea {
   color: var(--brand);
 }
 
+.quiz-list-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.review-item.is-hidden {
+  opacity: 0.55;
+}
+
+.verify-toggle {
+  align-self: center;
+  margin-top: 4px;
+}
+
+.verify-panel {
+  margin-top: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.verify-result {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+
+.verify-result.ok {
+  border-color: var(--brand);
+  background: var(--surface-2);
+}
+
+.verify-result p {
+  margin: 0 0 2px;
+}
+
 .question-card {
   border: 1px solid var(--line);
   border-radius: 8px;
