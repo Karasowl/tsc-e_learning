@@ -1,37 +1,50 @@
+/* ============================================================================
+   TSC SECURITY DESIGN SYSTEM — "Centro de Operaciones"
+   Light is the default (lectura intensiva): warm-paper reading area + ink-dark
+   structural chrome (sidebar, avatars) + brand red #A82431 como único acento.
+   Dark mode (toggle) usa la escala ink real del sistema.
+   ============================================================================ */
 :root {
   color-scheme: light;
-  /* Surfaces & text */
-  --bg: #eceff5;
-  --surface: #ffffff;
-  --surface-2: #f4f6fb;
-  --surface-3: #e9edf5;
-  --text: #131a2e;
-  --text-soft: #38435a;
-  --muted: #586273;
-  --line: #dde3ed;
-  --line-strong: #c4cdda;
-  /* TSC brand: deep navy primary + maroon accent (from the corporate logo) */
-  --navy: #131a33;
-  --navy-2: #1d274a;
-  --brand: #8c1713;
-  --brand-strong: #a51b15;
-  --brand-2: #1d274a;
-  /* Semantic colors (foreground + soft background) */
-  --ok: #16803a;
-  --ok-bg: #e7f6ec;
-  --ok-fg: #116a30;
-  --warn: #b7791f;
-  --warn-bg: #fdf2d6;
-  --warn-fg: #8a5a06;
-  --bad: #b42318;
-  --bad-bg: #fdecea;
-  --bad-fg: #9f1b12;
-  --info-bg: #e9eefb;
-  --info-fg: #1d4ed8;
-  --neutral-bg: #eef1f6;
-  --neutral-fg: #586273;
-  --focus: #8c1713;
-  /* Spacing scale (8px base) */
+
+  /* ─── Brand red (anclado en el #A82431 del sistema) ─── */
+  --tsc-red: #a82431; /* Primario: CTAs, dot del wordmark, reglas activas. */
+  --tsc-red-deep: #7e1b24; /* Hover / pressed. */
+  --tsc-red-bright: #c62a38; /* Alerta / live. */
+  --tsc-red-on-dark: #e45d6c; /* Rojo como TEXTO/links sobre ink. */
+
+  /* Surfaces & text — claro = variante "papel cálido" (dossier) */
+  --bg: #f4f2ec; /* Página (ink-700 light). */
+  --surface: #ffffff; /* Cards / paneles (ink-600 light). */
+  --surface-2: #f6f4ef; /* Raised / fills de input (ink-500 light). */
+  --surface-3: #ece9e2; /* Banda hundida (ink-800 light). */
+  --text: #15191c; /* fg-strong */
+  --text-soft: rgba(21, 25, 28, 0.86); /* fg-1 (cuerpo). */
+  --muted: rgba(21, 25, 28, 0.6); /* fg-2 (secundario / captions). */
+  --line: rgba(21, 25, 28, 0.1); /* line-1 (hairline). */
+  --line-strong: #cbc7be; /* ink-400 light (bordes de input). */
+  /* Chrome estructural (sidebar, avatars) = ink oscuro, dark-first */
+  --navy: #0d161a; /* ink-800 */
+  --navy-2: #182830; /* ink-600 — también texto slate fuerte sobre claro. */
+  --brand: #a82431; /* EL acento. */
+  --brand-strong: #7e1b24; /* Hover = oscurecer (red-deep). */
+  --brand-2: #182830; /* Alias de navy-2 (texto oscuro). */
+  /* Semantic colors — paleta operativa (fg + soft bg) */
+  --ok: #2f8f5e;
+  --ok-bg: #e4f1ea;
+  --ok-fg: #1f6a45;
+  --warn: #b6831f;
+  --warn-bg: #faf0d8;
+  --warn-fg: #875e10;
+  --bad: #b42330;
+  --bad-bg: #fbe9ea;
+  --bad-fg: #8e1b24;
+  --info-bg: #e6eef7;
+  --info-fg: #2c5e9e;
+  --neutral-bg: #ece9e2;
+  --neutral-fg: rgba(21, 25, 28, 0.6);
+  --focus: #a82431;
+  /* Spacing scale (4px base) */
   --space-4: 4px;
   --space-8: 8px;
   --space-12: 12px;
@@ -40,7 +53,7 @@
   --space-24: 24px;
   --space-32: 32px;
   --space-48: 48px;
-  /* Typographic scale */
+  /* Typographic scale (densidad del LMS — sin agrandar) */
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
   --text-base: 0.9375rem;
@@ -56,49 +69,62 @@
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
-  /* Radius + shadow */
-  --radius-sm: 8px;
-  --radius-md: 10px;
+  /* Tracking (del sistema) */
+  --track-display: 0.005em;
+  --track-eyebrow: 0.18em;
+  --track-mono: 0.08em;
+  /* Type families — Saira (display) · Hanken (body) · IBM Plex Mono (datos) */
+  --font-display: var(--font-saira), "Oswald", "Arial Narrow", system-ui, sans-serif;
+  --font-body: var(--font-hanken), var(--font-inter), system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: var(--font-body); /* compat */
+  /* Radius (disciplinado; pill reservado a botones + status pills) */
+  --radius-sm: 6px;
+  --radius-md: 8px;
   --radius-lg: 14px;
-  --radius-xl: 18px;
+  --radius-xl: 20px;
   --radius-full: 999px;
-  --shadow-sm: 0 1px 2px rgba(19, 26, 51, 0.06), 0 1px 1px rgba(19, 26, 51, 0.04);
-  --shadow-md: 0 6px 16px rgba(19, 26, 51, 0.08);
-  --shadow-lg: 0 18px 40px rgba(19, 26, 51, 0.16);
-  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Shadows — sobrias, alpha ink (profundidad, nunca glow) */
+  --shadow-sm: 0 1px 2px rgba(21, 25, 28, 0.08);
+  --shadow-md: 0 10px 28px rgba(21, 25, 28, 0.1);
+  --shadow-lg: 0 24px 60px rgba(21, 25, 28, 0.16);
 }
 
-/* ===== Tema oscuro (override de tokens) ===== */
+/* ===== Tema oscuro — escala ink "Centro de Operaciones" (override de tokens) ===== */
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0e1320;
-  --surface: #161d2e;
-  --surface-2: #1d2638;
-  --surface-3: #273046;
-  --text: #e7ecf6;
-  --text-soft: #b9c3d8;
-  --muted: #8b97af;
-  --line: #2a3349;
-  --line-strong: #3b4763;
-  --brand: #e0564f;
-  --brand-strong: #ec6a63;
-  --brand-2: #ccd5e8;
-  --ok: #22a256;
-  --ok-bg: rgba(34, 197, 94, 0.16);
-  --ok-fg: #6ee7a0;
-  --warn: #c79019;
-  --warn-bg: rgba(234, 179, 8, 0.16);
-  --warn-fg: #f0c44d;
-  --bad: #e0564f;
-  --bad-bg: rgba(239, 68, 68, 0.16);
+  --bg: #090f12; /* ink-900 — base de página */
+  --surface: #182830; /* ink-600 — cards */
+  --surface-2: #21343d; /* ink-500 — raised / input */
+  --surface-3: #2c434d; /* ink-400 */
+  --text: #ffffff; /* fg-strong */
+  --text-soft: rgba(255, 255, 255, 0.86); /* fg-1 */
+  --muted: rgba(255, 255, 255, 0.62); /* fg-2 */
+  --line: rgba(255, 255, 255, 0.08); /* line-1 */
+  --line-strong: rgba(255, 255, 255, 0.15); /* line-2 */
+  --navy: #0d161a; /* ink-800 — sidebar */
+  --navy-2: #21343d; /* fin del gradiente continue-card */
+  --brand: #e45d6c; /* red-on-dark — texto/iconos con contraste */
+  --brand-strong: #f0838f; /* hover (más claro sobre ink) */
+  --brand-2: rgba(255, 255, 255, 0.86); /* alias de texto claro sobre ink */
+  --ok: #34a06a;
+  --ok-bg: rgba(52, 160, 106, 0.18);
+  --ok-fg: #6fd39b;
+  --warn: #c8922e;
+  --warn-bg: rgba(200, 146, 46, 0.18);
+  --warn-fg: #e6b95e;
+  --bad: #e45d6c;
+  --bad-bg: rgba(198, 42, 56, 0.2);
   --bad-fg: #f4928b;
-  --info-bg: rgba(59, 130, 246, 0.16);
+  --info-bg: rgba(62, 120, 194, 0.2);
   --info-fg: #8ab4f8;
   --neutral-bg: rgba(255, 255, 255, 0.07);
-  --neutral-fg: #8b97af;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 18px 40px rgba(0, 0, 0, 0.55);
+  --neutral-fg: rgba(255, 255, 255, 0.62);
+  --focus: #e45d6c;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.38);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.48);
 }
 
 * {
@@ -239,10 +265,11 @@ button:disabled {
 
 .eyebrow {
   margin: 0 0 4px;
+  font-family: var(--font-body);
   color: var(--brand);
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
+  font-weight: 600;
+  letter-spacing: var(--track-eyebrow);
   text-transform: uppercase;
 }
 
@@ -257,7 +284,9 @@ h1,
 h2,
 h3 {
   margin: 0;
+  font-family: var(--font-display);
   line-height: var(--leading-tight);
+  letter-spacing: var(--track-display);
   font-weight: var(--weight-bold);
 }
 
@@ -303,7 +332,7 @@ input:focus,
 select:focus,
 textarea:focus,
 button:focus-visible {
-  outline: 3px solid rgba(140, 23, 19, 0.22);
+  outline: 3px solid rgba(168, 36, 49, 0.4);
   outline-offset: 2px;
   border-color: var(--brand);
 }
@@ -325,6 +354,13 @@ button:focus-visible {
   white-space: nowrap;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease,
     box-shadow 120ms ease, transform 80ms ease;
+}
+
+/* Pill = señal de marca, reservada a los CTA de texto. */
+.primary-button,
+.secondary-button,
+.ghost-button {
+  border-radius: var(--radius-full);
 }
 
 .primary-button:active:not(:disabled),
@@ -460,9 +496,9 @@ button:focus-visible {
 }
 
 .nav-button.active {
-  background: rgba(140, 23, 19, 0.85);
+  background: rgba(168, 36, 49, 0.92);
   color: #fff;
-  box-shadow: inset 3px 0 0 #f0b9b3;
+  box-shadow: inset 3px 0 0 var(--tsc-red-on-dark);
 }
 
 .nav-button.active svg {
@@ -585,9 +621,12 @@ td small,
   min-height: 30px;
   align-items: center;
   border-radius: 999px;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 800;
+  padding: 0 11px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono);
 }
 
 .completion-chip {
@@ -804,7 +843,11 @@ td small,
 
 .metric strong {
   margin-top: 4px;
+  font-family: var(--font-mono);
   font-size: 24px;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 
 .table-wrap {
@@ -837,10 +880,11 @@ th {
   z-index: 1;
   background: var(--surface-2);
   color: var(--muted);
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: var(--track-mono);
 }
 
 tbody tr {
@@ -1831,7 +1875,7 @@ label textarea {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(19, 26, 51, 0.55);
+  background: rgba(9, 15, 18, 0.62);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -2157,7 +2201,7 @@ label textarea {
 }
 
 .primary-button.danger:hover:not(:disabled) {
-  background: #9f1b12;
+  background: var(--bad-fg);
 }
 
 /* ===== Skeletons ===== */
@@ -2357,10 +2401,11 @@ label textarea {
   background: transparent;
   padding: 0;
   font: inherit;
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: var(--track-mono);
   color: var(--muted);
   cursor: pointer;
 }
@@ -2722,7 +2767,7 @@ label textarea {
     inset: 0;
     z-index: 70;
     border: 0;
-    background: rgba(19, 26, 51, 0.5);
+    background: rgba(9, 15, 18, 0.55);
   }
 
   .nav-close,

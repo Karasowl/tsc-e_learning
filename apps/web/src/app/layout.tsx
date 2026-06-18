@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Saira_Condensed, Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import { ConfirmHost, PromptHost, Toaster } from "./ui";
 import "./globals.css";
 
@@ -7,6 +7,27 @@ const inter = Inter({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-inter"
+});
+
+// TSC Security Design System — display / body / operational-data voices.
+const saira = Saira_Condensed({
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["500", "600", "700", "800"],
+  variable: "--font-saira"
+});
+
+const hanken = Hanken_Grotesk({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-hanken"
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500", "600"],
+  variable: "--font-plex-mono"
 });
 
 export const metadata: Metadata = {
@@ -25,7 +46,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={inter.variable} suppressHydrationWarning>
+    <html
+      lang="es"
+      className={`${inter.variable} ${saira.variable} ${hanken.variable} ${plexMono.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
