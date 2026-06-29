@@ -19,3 +19,5 @@ data
 *.tar
 *.tar.gz
 wp-content
+
+.vercel
