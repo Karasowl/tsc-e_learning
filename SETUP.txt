@@ -1,0 +1,177 @@
+===============================================================================
+ TSC CAPACITA LMS — CÓMO RECREAR EL ENTORNO EN OTRA PC
+===============================================================================
+ Objetivo: bajar el repo en una máquina nueva y dejar la plataforma corriendo
+ en local exactamente como la dejaste, para seguir desarrollando.
+
+ Stack: monorepo pnpm
+   - apps/web   -> Next.js 16 (puerto 3000)
+   - apps/api   -> Fastify (puerto 4000)
+   - packages/db-> Prisma + PostgreSQL
+ Rama de trabajo actual: design/tsc-security-rebrand
+
+ IMPORTANTE — LEE ESTO PRIMERO:
+   Git trae el CÓDIGO, no el ENTORNO. Por seguridad NO se suben a git:
+     - .env            (secretos: JWT, contraseña SMTP, etc.)
+     - node_modules/   (se reinstala con pnpm install)
+     - dist/ y .next/  (se regeneran al compilar)
+     - La BASE DE DATOS con datos (vive en un volumen de Docker, NO en git)
+   Por eso, además de "git pull", hay que rehacer estos 4 pasos en la PC nueva.
+===============================================================================
+
+
+-------------------------------------------------------------------------------
+ 0) PRERREQUISITOS (instalar una vez en la PC nueva)
+-------------------------------------------------------------------------------
+   - Git
+   - Node.js 20 LTS o superior   (verifica:  node -v)
+   - Docker Desktop              (para PostgreSQL local; debe estar ABIERTO)
+   - pnpm 9.15.9                 (el repo lo fija en package.json)
+        La forma más limpia de obtenerlo es con corepack (viene con Node):
+            corepack enable
+            corepack prepare pnpm@9.15.9 --activate
+        Verifica:  pnpm -v   -> debe decir 9.15.9
+
+
+-------------------------------------------------------------------------------
+ 1) BAJAR EL CÓDIGO
+-------------------------------------------------------------------------------
+   Si es la primera vez en esa PC:
+       git clone https://github.com/Karasowl/tsc-e_learning.git
+       cd tsc-e_learning
+       git checkout design/tsc-security-rebrand
+
+   Si ya tenías el repo ahí:
+       cd tsc-e_learning
+       git fetch origin
+       git checkout design/tsc-security-rebrand
+       git pull
+
+
+-------------------------------------------------------------------------------
+ 2) INSTALAR DEPENDENCIAS
+-------------------------------------------------------------------------------
+       pnpm install
+   (instala las dependencias de los 3 paquetes del monorepo)
+
+
+-------------------------------------------------------------------------------
+ 3) CREAR EL .env  (secretos — NO está en git)
+-------------------------------------------------------------------------------
+   Copia la plantilla:
+       Copy-Item .env.example .env        (PowerShell)
+       # o en bash:  cp .env.example .env
+
+   Luego edita .env y rellena lo que esté vacío o diga "replace"/"CHANGE-ME":
+
+     JWT_SECRET     -> una cadena larga aleatoria (mín. 32 caracteres).
+                       Para que las sesiones/tokens guardados sigan siendo
+                       válidos, usa el MISMO valor que tenías en tu .env
+                       anterior. Si empiezas con BD vacía, da igual: pon uno
+                       nuevo. Generar uno en PowerShell:
+                         -join ((1..48) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
+
+     SMTP_HOST / SMTP_USER / SMTP_PASSWORD
+                    -> solo si vas a probar el envío de correos en local.
+                       Puedes dejarlos vacíos para desarrollar; entonces el
+                       worker de notificaciones no enviará nada (es opcional).
+
+   El resto de valores por defecto del .env.example YA sirven para local:
+     - DATABASE_URL apunta a la Postgres de Docker (localhost:5433)
+     - API en :4000, Web en :3000
+   NOTA: apps/web NO necesita .env propio; usa http://localhost:4000 por
+   defecto cuando NEXT_PUBLIC_API_URL no está definido.
+
+
+-------------------------------------------------------------------------------
+ 4) LEVANTAR POSTGRES (Docker)
+-------------------------------------------------------------------------------
+   Con Docker Desktop abierto:
+       docker compose up -d db
+
+   Esto crea la Postgres 16 en el puerto 5433 (5433 para no chocar con una
+   Postgres local que suele usar 5432). Espera unos segundos a que esté "healthy".
+   Comprobar:   docker compose ps
+
+
+-------------------------------------------------------------------------------
+ 5) CREAR EL ESQUEMA DE LA BASE DE DATOS
+-------------------------------------------------------------------------------
+       pnpm prisma:generate     # genera el cliente Prisma
+       pnpm prisma:push         # crea las tablas en la Postgres (esquema VACÍO)
+
+   OJO: esto deja la base con el esquema pero SIN DATOS (sin cursos, usuarios,
+   etc.). Para tener tus datos reales, mira la sección "DATOS" más abajo.
+
+
+-------------------------------------------------------------------------------
+ 6) ARRANCAR TODO
+-------------------------------------------------------------------------------
+       pnpm dev
+
+   Levanta API y Web en paralelo:
+       Web  -> http://localhost:3000
+       API  -> http://localhost:4000
+
+   (Para arrancar solo uno:  pnpm dev:api   /   pnpm dev:web )
+
+   Verifica: abre http://localhost:3000 en el navegador. La plataforma debe
+   cargar. Si la BD está vacía, verás el catálogo sin contenido (es normal).
+
+
+===============================================================================
+ DATOS — CÓMO LLEVAR TU BASE DE DATOS REAL A LA OTRA PC
+===============================================================================
+ El paso 5 crea tablas vacías. Tus cursos/usuarios/inscripciones viven en el
+ volumen Docker de ESTA PC y no se suben a git. Tienes 2 opciones:
+
+ OPCIÓN A (recomendada) — copiar la base con un volcado (dump):
+
+   1. EN ESTA PC (la actual), con la Postgres corriendo, genera el volcado:
+          docker compose exec -T db pg_dump -U tsc_capacita tsc_capacita > backup-tsc.sql
+
+   2. Transfiere "backup-tsc.sql" a la otra PC por un medio PRIVADO
+      (USB, Drive personal, etc.).
+      ¡NO lo subas a git! Contiene datos personales y hashes de contraseñas.
+
+   3. EN LA OTRA PC, después de los pasos 4 y 5 (Postgres arriba + esquema):
+          Get-Content backup-tsc.sql | docker compose exec -T db psql -U tsc_capacita -d tsc_capacita
+      (en bash:  cat backup-tsc.sql | docker compose exec -T db psql -U tsc_capacita -d tsc_capacita )
+
+   Tras restaurar, NO vuelvas a correr "prisma:push" sobre datos importados sin
+   revisar; el esquema ya viene en el dump.
+
+ OPCIÓN B — re-importar desde WordPress:
+   Solo si quieres reconstruir desde el origen. Necesitas los archivos de
+   tmp/ (dump SQL de WordPress + wp-content), que tampoco viajan por git.
+   El proceso está documentado en README.md (sección "WordPress Audit") y en
+   docs/MIGRATION_STRATEGY.md.
+
+
+===============================================================================
+ RESUMEN RÁPIDO (PC nueva, copiar y pegar)
+===============================================================================
+   git clone https://github.com/Karasowl/tsc-e_learning.git
+   cd tsc-e_learning
+   git checkout design/tsc-security-rebrand
+   corepack enable; corepack prepare pnpm@9.15.9 --activate
+   pnpm install
+   Copy-Item .env.example .env      # luego edita JWT_SECRET (y SMTP si lo usas)
+   docker compose up -d db
+   pnpm prisma:generate
+   pnpm prisma:push
+   # (opcional) restaurar datos:  Get-Content backup-tsc.sql | docker compose exec -T db psql -U tsc_capacita -d tsc_capacita
+   pnpm dev
+
+
+===============================================================================
+ DOCUMENTACIÓN ADICIONAL (ya en el repo)
+===============================================================================
+   README.md                  -> arranque local + auditoría WordPress
+   docs/ARCHITECTURE.md       -> arquitectura del sistema
+   docs/API_RUNTIME.md        -> runtime de la API
+   docs/OPERATIONS.md         -> runbook operativo (estado real)
+   docs/DEPLOYMENT.md         -> despliegue (VPS + Vercel)
+   docs/VPS_RUNBOOK.md        -> operación del VPS de producción
+   docs/COMPLETION-BACKLOG.md -> pendientes / backlog de la plataforma
+===============================================================================
