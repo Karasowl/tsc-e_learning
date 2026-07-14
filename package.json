@@ -13,6 +13,7 @@
     "prisma:generate": "pnpm --filter @tsc-capacita/db prisma:generate",
     "prisma:migrate": "pnpm --filter @tsc-capacita/db prisma:migrate",
     "prisma:push": "pnpm --filter @tsc-capacita/db prisma:push",
+    "db:seed": "pnpm --filter @tsc-capacita/db run db:seed",
     "wp:audit": "pnpm --filter @tsc-capacita/wp-audit run dump",
     "wp:export-users": "pnpm --filter @tsc-capacita/wp-audit run export-users",
     "wp:export-catalog": "pnpm --filter @tsc-capacita/wp-audit run export-catalog",
