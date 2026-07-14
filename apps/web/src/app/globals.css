@@ -534,7 +534,7 @@ button:focus-visible {
 .secondary-button {
   background: var(--surface-2);
   border-color: var(--line-strong);
-  color: var(--navy-2);
+  color: var(--brand-2);
 }
 
 .secondary-button:hover:not(:disabled) {
@@ -544,7 +544,7 @@ button:focus-visible {
 
 .ghost-button {
   background: transparent;
-  color: var(--navy-2);
+  color: var(--brand-2);
 }
 
 .ghost-button:hover:not(:disabled) {
@@ -556,7 +556,7 @@ button:focus-visible {
   padding: 0;
   border-color: var(--line);
   background: var(--surface);
-  color: var(--navy-2);
+  color: var(--brand-2);
 }
 
 .icon-button:hover:not(:disabled) {
@@ -1256,7 +1256,7 @@ tr:last-child td {
   background: none;
   border: 0;
   padding: 0;
-  color: var(--navy-2);
+  color: var(--brand-2);
   font: inherit;
   font-weight: 700;
   text-align: left;
@@ -1957,7 +1957,7 @@ label textarea {
   border: 1px solid var(--line);
   font-size: 12px;
   font-weight: 600;
-  color: var(--navy-2);
+  color: var(--brand-2);
 }
 
 .role-chip.admin {
