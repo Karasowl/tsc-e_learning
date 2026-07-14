@@ -209,7 +209,7 @@ Modal/Wizard ──► Nuevo curso / Publicar / Asignar / Exportar / Invitar
 
 ## 7. Estado de implementación (noche del 2026-07-14)
 
-Rama `redesign/dark-first-flows`: 11 commits sobre `main`, 61 archivos, +10160/-191. **Sin push, sin deploy** (el VPS está compartido con producción y no se tocó). Todo verificado en local.
+Rama `redesign/dark-first-flows`: 14 commits sobre `main` (11 de construcción + `1369f73` doc §7 + `3d71d31` fix videos + `9beab60` test de ascenso). **Sin push, sin deploy** (el VPS está compartido con producción y no se tocó). Todo verificado en local.
 
 ### Construido y verificado
 - **Fase 0 dark-first**: tokens escala ink + rojo `#A82431`, fuentes Saira/Hanken/Plex, tema invertido (oscuro por defecto, claro como variante), biblioteca de componentes al spec, iconos Lucide. Arreglado un bug de contraste (botones con texto invisible en oscuro).
@@ -219,13 +219,20 @@ Rama `redesign/dark-first-flows`: 11 commits sobre `main`, 61 archivos, +10160/-
 - **PWA** instalable (manifest + service worker + iconos de marca, favicon arreglado) + guía `docs/PLAY_STORE.md`.
 - **Infra**: entorno local (Postgres nativo :5433), seed idempotente (`pnpm db:seed`), E2E Playwright (`pnpm e2e`).
 
-Verificación: **40 tests de API verde**, **e2e 10/10 verde** sobre el commit final, build web+api verde, QA visual por captura de las pantallas clave de cada rol.
+Verificación: **46 tests de API verde** (corridos de nuevo a mano), **e2e 10/10 verde**, build web+api verde, QA visual por captura de las pantallas clave de cada rol.
+
+### Continuación y re-verificación de primera mano (2026-07-14, tras reinicios de la laptop)
+Trabajo en trozos pequeños y commiteados uno por uno para resistir bloqueos del equipo. Re-verificación directa sobre la build real (no reportes de terceros):
+- **Arreglado hueco real**: los TRES videos del seed tenían ids de YouTube ficticios que no reproducían (rompía "ver la clase" en cualquier curso). Reemplazados por videos reales embebibles verificados con oEmbed (200) y confirmados VISUALMENTE en la app: la lección del guardia carga `youtube.com/embed/kWsZrtGFip0` (captura en `tmp-qa/guardia-video-FIXED.png`).
+- **Ascenso de rango blindado**: extraída `detectAscension()` pura (antes duplicada inline en las rutas de curso y diploma) y cubierta con 6 casos (cruce de umbral, umbral exacto, no-ascenso). Suite 46/46.
+- **Falsa alarma descartada**: el "+ Administrador / + Instructor" en Colaboradores son botones para AGREGAR rol, no roles asignados; el backend devuelve los roles reales. No es bug.
+- Confirmado de primera mano por captura: guardia gamificado (Rango 460 XP), instructor con conteos reales + versión V1, admin con invitación real (usuario INVITADO + enlace de activación de 7 días). Log de API limpio (200/204, cero 500).
 
 ### Decisiones autónomas tomadas (delegadas por el usuario "cualquier decisión que dependa de mí, tómala tú")
 Gamificación real; versionado + sello P1; XP +10 lección / +240 diploma; `employeeCode` añadido al esquema; líneas de servicio = chips del diseño; reordenar con flechas Lucide; App Router diferido (no necesario para empaquetar); sitio corporativo fuera de alcance; instalado Postgres nativo para dev (no había Docker, reversible).
 
 ### Pendientes menores (no bloquean uso)
-Video de "Seguridad Intramuros" con id de YouTube ficticio en el seed; celebración de ascenso sin test que cruce umbral; tab "Anuncios" del instructor es placeholder (no hay backend); reporte del admin en Ops es versión lean; docs descriptivos (OPERATIONS/API_RUNTIME) sin actualizar (se hará al cutover); instalabilidad PWA verificada por assets/criterios, no por Lighthouse.
+Tab "Anuncios" del instructor es placeholder honesto ("En construcción", sin backend) - decisión de producto pendiente (dejar/ocultar/construir); reporte del admin en Ops es versión lean; en el shell móvil del guardia la tabbar inferior fija solapa un poco el video en cierta posición de scroll (cosmético); docs descriptivos (OPERATIONS/API_RUNTIME) sin actualizar (se hará al cutover); instalabilidad PWA verificada por assets/criterios, no por Lighthouse. (Resueltos: los 3 videos ficticios del seed y el test de ascenso.)
 
 ### Cómo probarlo en local
 BD: `bash ~/.local/share/tsc-capacita-localpg-start.sh` (Postgres :5433). App: `pnpm dev` (web :3000, api :4000). Login: `guardia@tsc.local` / `instructor@tsc.local` / `admin@tsc.local`, password `Capacita2026!`. Pruebas: `pnpm e2e`. Re-sembrar: `pnpm db:seed`.
