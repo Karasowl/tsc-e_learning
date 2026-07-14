@@ -150,6 +150,7 @@ export async function registerCourseRoutes(server: FastifyInstance) {
         description: course.description,
         excerpt: course.excerpt,
         status: course.status,
+        version: course.version,
         level: course.level,
         durationSec: course.durationSec,
         teacher: course.teacher,

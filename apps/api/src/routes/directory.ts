@@ -75,14 +75,7 @@ export async function registerDirectoryRoutes(server: FastifyInstance) {
     });
 
     return {
-      courses: courses.map((course) => ({
-        id: course.id,
-        title: course.title,
-        slug: course.slug,
-        status: course.status,
-        teacher: course.teacher,
-        counts: course._count
-      }))
+      courses: courses.map(serializeAdminCourse)
     };
   });
 
@@ -117,4 +110,31 @@ export async function registerDirectoryRoutes(server: FastifyInstance) {
       }))
     };
   });
+}
+
+type AdminCourseRow = {
+  id: string;
+  title: string;
+  slug: string;
+  status: string;
+  version: number;
+  teacher: { id: string; displayName: string } | null;
+  _count: { modules: number; lessons: number; quizzes: number; enrollments: number };
+};
+
+/**
+ * Shape a course for the authoring console list. The counts MUST be exposed under
+ * `_count` (the exact key `authoring.tsx` reads); emitting them as `counts` is the
+ * bug that made every course show "0 secciones · 0 clases · 0 exámenes".
+ */
+export function serializeAdminCourse(course: AdminCourseRow) {
+  return {
+    id: course.id,
+    title: course.title,
+    slug: course.slug,
+    status: course.status,
+    version: course.version,
+    teacher: course.teacher,
+    _count: course._count
+  };
 }

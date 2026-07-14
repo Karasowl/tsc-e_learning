@@ -167,6 +167,12 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
       if (body.data.status === "PUBLISHED" && course.publishedAt === null) {
         data.publishedAt = new Date();
       }
+      // Publishing (any transition from a non-published state into PUBLISHED)
+      // cuts a new immutable version: vN -> vN+1. Seed/already-published courses
+      // keep their current version because they never cross this transition.
+      if (body.data.status === "PUBLISHED" && course.status !== "PUBLISHED") {
+        data.version = { increment: 1 };
+      }
     }
 
     const updated = await getPrisma().course.update({
@@ -645,6 +651,7 @@ function serializeCourse(course: {
   description: string | null;
   excerpt: string | null;
   status: string;
+  version: number;
   teacherId: string | null;
   level: string | null;
   durationSec: number | null;
@@ -660,6 +667,7 @@ function serializeCourse(course: {
     description: course.description,
     excerpt: course.excerpt,
     status: course.status,
+    version: course.version,
     teacherId: course.teacherId,
     level: course.level,
     durationSec: course.durationSec,

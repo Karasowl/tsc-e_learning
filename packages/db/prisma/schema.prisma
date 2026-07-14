@@ -139,6 +139,7 @@ model Course {
   description     String?
   excerpt         String?
   status          CourseStatus   @default(DRAFT)
+  version         Int            @default(1)
   teacherId       String?
   level           String?
   durationSec     Int?
@@ -329,6 +330,8 @@ model QuizAttempt {
   earnedMarks     Decimal?      @db.Decimal(8, 2)
   result          String?
   questionOrder   String[]      @default([])
+  rulesSnapshot   Json?
+  rulesVersion    Int?
   sourceSystem   String?
   sourceId       String?
   quiz           Quiz          @relation(fields: [quizId], references: [id], onDelete: Cascade)

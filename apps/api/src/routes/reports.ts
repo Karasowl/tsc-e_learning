@@ -4,6 +4,12 @@ import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { isAdmin, isTeacherOrAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
+import {
+  effectivePassingPercent,
+  parseRulesSnapshot,
+  snapshotSeal,
+  type RulesSnapshot
+} from "../lib/rules-snapshot.js";
 
 const reportQuerySchema = z.object({
   courseId: z.string().optional()
@@ -107,7 +113,10 @@ async function buildStudentReport(auth: AuthContext, courseId: string | undefine
       const attempt = finalQuiz
         ? enrollment.user.quizAttempts.find((candidate) => candidate.quizId === finalQuiz.id) ?? null
         : null;
-      const status = reportStatus(enrollment.status, finalQuiz, attempt);
+      // The verdict is locked to the rules the student rendered under (the seal),
+      // not the live exam. Sealed attempts carry a snapshot; older ones fall back.
+      const snapshot = attempt ? parseRulesSnapshot(attempt.rulesSnapshot) : null;
+      const status = reportStatus(enrollment.status, finalQuiz, attempt, snapshot);
 
       return {
         studentId: enrollment.user.id,
@@ -136,7 +145,18 @@ async function buildStudentReport(auth: AuthContext, courseId: string | undefine
               earnedMarks: decimalToNumber(attempt.earnedMarks),
               totalMarks: decimalToNumber(attempt.totalMarks),
               startedAt: attempt.startedAt,
-              submittedAt: attempt.submittedAt
+              submittedAt: attempt.submittedAt,
+              // Evaluation seal for "Resultados con sello": whether the verdict is
+              // locked, the course version pill, the frozen passing threshold, when
+              // it was sealed, and a short integrity tag.
+              sealed: snapshot !== null,
+              rulesVersion: attempt.rulesVersion,
+              passingScorePercent: effectivePassingPercent(
+                snapshot,
+                finalQuiz?.passingScorePercent ? finalQuiz.passingScorePercent.toNumber() : null
+              ),
+              sealedAt: snapshot?.capturedAt ?? null,
+              seal: snapshot ? snapshotSeal(snapshot) : null
             }
           : null,
         status
@@ -233,7 +253,8 @@ function reportStatus(
     earnedMarks: Prisma.Decimal | null;
     totalMarks: Prisma.Decimal | null;
     scorePercent: Prisma.Decimal | null;
-  } | null
+  } | null,
+  snapshot: RulesSnapshot | null
 ): StudentReportStatus {
   if (enrollmentStatus === "ACTIVE") {
     return "En Progreso";
@@ -252,7 +273,13 @@ function reportStatus(
   }
 
   const scorePercent = attempt.scorePercent?.toNumber() ?? (attempt.earnedMarks.toNumber() / attempt.totalMarks.toNumber()) * 100;
-  const passingScorePercent = finalQuiz.passingScorePercent?.toNumber() ?? 80;
+  // Compare the frozen score against the SEALED passing threshold (the rule the
+  // student rendered under), not the live exam. Attempts without a seal fall back
+  // to the live quiz threshold, exactly as before this feature.
+  const passingScorePercent = effectivePassingPercent(
+    snapshot,
+    finalQuiz.passingScorePercent ? finalQuiz.passingScorePercent.toNumber() : null
+  );
   return scorePercent >= passingScorePercent ? "Aprobado" : "Reprobado";
 }
 

@@ -3,6 +3,12 @@ import type { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { gradeQuizSubmission, type GradingQuestion, type SubmittedAnswer } from "../lib/grading.js";
+import {
+  buildRulesSnapshot,
+  effectivePassingPercent,
+  parseRulesSnapshot,
+  snapshotGradingQuestions
+} from "../lib/rules-snapshot.js";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
 import { emitStudentNotification } from "../lib/notifications.js";
 import { awardQuizPassedBadges } from "../lib/gamification.js";
@@ -86,6 +92,17 @@ export async function registerQuizRoutes(server: FastifyInstance) {
     const questions = orderedQuestionsForNewAttempt(quiz);
     const totalMarks = questions.reduce((sum, question) => sum + question.points.toNumber(), 0);
 
+    // Freeze the rules the student rents this attempt under: passing threshold,
+    // questions + correct keys, and the timer. Grading and the report read this
+    // seal, so editing the exam afterward can't rewrite the historical verdict.
+    const rulesSnapshot = buildRulesSnapshot({
+      courseVersion: quiz.course.version,
+      passingScorePercent: quiz.passingScorePercent === null ? null : quiz.passingScorePercent.toNumber(),
+      timeLimitSec: quiz.timeLimitSec,
+      questions: toGradingQuestions(questions),
+      capturedAt: startedAt
+    });
+
     const attempt = await getPrisma().quizAttempt.create({
       data: {
         quizId: quiz.id,
@@ -94,7 +111,9 @@ export async function registerQuizRoutes(server: FastifyInstance) {
         dueAt,
         totalQuestions: questions.length,
         totalMarks,
-        questionOrder: questions.map((question) => question.id)
+        questionOrder: questions.map((question) => question.id),
+        rulesSnapshot: rulesSnapshot as unknown as Prisma.InputJsonValue,
+        rulesVersion: quiz.course.version
       }
     });
 
@@ -217,9 +236,17 @@ export async function registerQuizRoutes(server: FastifyInstance) {
       return reply.code(409).send({ error: "Attempt time limit expired", attempt: serializeAttempt(expired) });
     }
 
-    const questions = orderQuestionsForAttempt(attempt.quiz.questions, attempt.questionOrder);
-    const grade = gradeQuizSubmission(toGradingQuestions(questions), body.data.answers as SubmittedAnswer[]);
-    const passingScorePercent = attempt.quiz.passingScorePercent?.toNumber() ?? 80;
+    // Grade against the sealed rules (frozen questions + correct keys + passing
+    // threshold) when the attempt has a snapshot; older attempts without one
+    // fall back to the live quiz, preserving prior behavior.
+    const snapshot = parseRulesSnapshot(attempt.rulesSnapshot);
+    const liveQuestions = orderQuestionsForAttempt(attempt.quiz.questions, attempt.questionOrder);
+    const gradingQuestions = snapshot ? snapshotGradingQuestions(snapshot) : toGradingQuestions(liveQuestions);
+    const grade = gradeQuizSubmission(gradingQuestions, body.data.answers as SubmittedAnswer[]);
+    const passingScorePercent = effectivePassingPercent(
+      snapshot,
+      attempt.quiz.passingScorePercent === null ? null : attempt.quiz.passingScorePercent.toNumber()
+    );
     const passed = grade.scorePercent >= passingScorePercent;
     const status = passed ? "PASSED" : "FAILED";
     const result = passed ? "pass" : "fail";
