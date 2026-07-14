@@ -99,6 +99,7 @@ model User {
   email              String       @unique
   displayName        String
   serviceLabel       String?
+  employeeCode       String?      @unique
   status             UserStatus   @default(ACTIVE)
   passwordHash       String?
   legacyPasswordHash String?

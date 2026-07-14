@@ -13,6 +13,7 @@ import { registerCourseAdminRoutes } from "./routes/courses-admin.js";
 import { registerCourseRoutes } from "./routes/courses.js";
 import { registerDirectoryRoutes } from "./routes/directory.js";
 import { registerEnrollmentAdminRoutes } from "./routes/enrollments-admin.js";
+import { registerGamificationRoutes } from "./routes/gamification.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerInventoryRoutes } from "./routes/inventory.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
@@ -87,6 +88,7 @@ export async function buildServer(config: AppConfig) {
   await registerCourseRoutes(server);
   await registerDirectoryRoutes(server);
   await registerEnrollmentAdminRoutes(server);
+  await registerGamificationRoutes(server);
   await registerHealthRoutes(server);
   await registerInventoryRoutes(server);
   await registerNotificationRoutes(server, config);

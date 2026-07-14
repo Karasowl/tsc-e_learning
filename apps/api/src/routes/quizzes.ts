@@ -5,6 +5,7 @@ import { z } from "zod";
 import { gradeQuizSubmission, type GradingQuestion, type SubmittedAnswer } from "../lib/grading.js";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
 import { emitStudentNotification } from "../lib/notifications.js";
+import { awardQuizPassedBadges } from "../lib/gamification.js";
 
 const startAttemptSchema = z.object({
   quizId: z.string().min(1)
@@ -269,6 +270,15 @@ export async function registerQuizRoutes(server: FastifyInstance) {
       scorePercent: grade.scorePercent,
       passingScorePercent
     });
+
+    // Insignias reales por aprobar examen (y por 100% de aciertos). Idempotente.
+    if (passed) {
+      await awardQuizPassedBadges(getPrisma(), {
+        userId: auth.userId,
+        courseId: attempt.quiz.courseId,
+        scorePercent: grade.scorePercent
+      });
+    }
 
     return {
       attempt: serializeAttempt(updatedAttempt),

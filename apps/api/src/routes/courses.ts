@@ -4,6 +4,12 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
 import { emitStudentNotification } from "../lib/notifications.js";
+import {
+  XP_LESSON_COMPLETED,
+  awardCourseCompletionBadges,
+  grantXp,
+  rankInfo
+} from "../lib/gamification.js";
 
 const courseRefSchema = z.object({
   courseRef: z.string().min(1)
@@ -256,14 +262,42 @@ export async function registerCourseRoutes(server: FastifyInstance) {
     const courseProgress = await updateCourseProgress(auth.userId, lesson.courseId);
     if (courseProgress.newlyCompleted) {
       await logCourseCompleted(auth.userId, lesson.courseId, lesson.course.title);
+      const completedCourses = await getPrisma().enrollment.count({
+        where: { userId: auth.userId, status: "COMPLETED" }
+      });
+      await awardCourseCompletionBadges(getPrisma(), {
+        userId: auth.userId,
+        courseId: lesson.courseId,
+        completedCourses,
+        awardedAt: completedAt
+      });
     }
+
+    // XP real, idempotente: la primera vez que se completa la leccion suma
+    // +10 XP; re-completar no vuelve a otorgar (la clave LESSON:<id> ya existe).
+    const grant = await grantXp(getPrisma(), {
+      userId: auth.userId,
+      key: `LESSON:${lesson.id}`,
+      points: XP_LESSON_COMPLETED,
+      title: `Leccion completada: ${lesson.title}`,
+      pointsType: "lesson",
+      occurredAt: completedAt
+    });
+    const rankBefore = rankInfo(grant.xpTotal - grant.xpDelta);
+    const rankAfter = rankInfo(grant.xpTotal);
 
     return {
       progress: {
         lessonId: progress.lessonId,
         completedAt: progress.completedAt
       },
-      courseProgress
+      courseProgress,
+      gamification: {
+        xpDelta: grant.xpDelta,
+        xpTotal: grant.xpTotal,
+        ascended: rankAfter.level > rankBefore.level,
+        rankName: rankAfter.name
+      }
     };
   });
 }

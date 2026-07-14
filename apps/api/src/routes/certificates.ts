@@ -16,6 +16,12 @@ import {
   DEFAULT_CERTIFICATE_BACKGROUND_PATH
 } from "../lib/certificate-pdf.js";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
+import {
+  XP_CERTIFICATE_ISSUED,
+  grantXp,
+  rankInfo,
+  totalXp
+} from "../lib/gamification.js";
 
 const issueCertificateSchema = z.object({
   courseId: z.string().min(1)
@@ -95,6 +101,9 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
 
     const existing = course.certificates[0];
     if (existing) {
+      // Diploma ya emitido: NO se re-otorga XP (evita duplicar el +240, y no
+      // suma XP retroactivo por diplomas sembrados que nunca pasaron por aqui).
+      const xpTotal = await totalXp(getPrisma(), auth.userId);
       return {
         certificate: serializeCertificate(
           await getPrisma().certificate.findUniqueOrThrow({
@@ -104,7 +113,13 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
               course: { select: { id: true, title: true, slug: true, teacherId: true } }
             }
           })
-        )
+        ),
+        gamification: {
+          xpDelta: 0,
+          xpTotal,
+          ascended: false,
+          rankName: rankInfo(xpTotal).name
+        }
       };
     }
 
@@ -130,8 +145,26 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
 
     await logCertificateIssued(certificate);
 
+    // XP real por diploma emitido (+240), idempotente por curso (CERT:<courseId>).
+    const grant = await grantXp(getPrisma(), {
+      userId: auth.userId,
+      key: `CERT:${course.id}`,
+      points: XP_CERTIFICATE_ISSUED,
+      title: `Diploma emitido: ${course.title}`,
+      pointsType: "certificate",
+      occurredAt: issuedAt
+    });
+    const rankBefore = rankInfo(grant.xpTotal - grant.xpDelta);
+    const rankAfter = rankInfo(grant.xpTotal);
+
     return reply.code(201).send({
-      certificate: serializeCertificate(certificate)
+      certificate: serializeCertificate(certificate),
+      gamification: {
+        xpDelta: grant.xpDelta,
+        xpTotal: grant.xpTotal,
+        ascended: rankAfter.level > rankBefore.level,
+        rankName: rankAfter.name
+      }
     });
   });
 

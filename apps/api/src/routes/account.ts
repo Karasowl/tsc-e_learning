@@ -38,6 +38,7 @@ export async function registerAccountRoutes(server: FastifyInstance) {
         email: user.email,
         displayName: user.displayName,
         serviceLabel: user.serviceLabel,
+        employeeCode: user.employeeCode,
         status: user.status,
         roles: user.roles.map((role) => role.role),
         lastLoginAt: user.lastLoginAt,
@@ -72,6 +73,7 @@ export async function registerAccountRoutes(server: FastifyInstance) {
         email: user.email,
         displayName: user.displayName,
         serviceLabel: user.serviceLabel,
+        employeeCode: user.employeeCode,
         status: user.status,
         roles: user.roles.map((role) => role.role)
       }

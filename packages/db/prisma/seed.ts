@@ -58,6 +58,7 @@ async function upsertUser(opts: {
   role: Role;
   passwordHash: string;
   serviceLabel?: string;
+  employeeCode?: string;
 }) {
   const email = opts.email.toLowerCase();
   const user = await prisma.user.upsert({
@@ -68,14 +69,16 @@ async function upsertUser(opts: {
       passwordHash: opts.passwordHash,
       legacyPasswordHash: null,
       legacyPasswordAlgo: null,
-      serviceLabel: opts.serviceLabel ?? null
+      serviceLabel: opts.serviceLabel ?? null,
+      employeeCode: opts.employeeCode ?? null
     },
     create: {
       email,
       displayName: opts.displayName,
       status: "ACTIVE",
       passwordHash: opts.passwordHash,
-      serviceLabel: opts.serviceLabel ?? null
+      serviceLabel: opts.serviceLabel ?? null,
+      employeeCode: opts.employeeCode ?? null
     }
   });
 
@@ -648,7 +651,8 @@ async function main() {
     displayName: "Marcos Martinez",
     role: "STUDENT",
     passwordHash,
-    serviceLabel: "Seguridad Intramuros"
+    serviceLabel: "Seguridad Intramuros",
+    employeeCode: "TSC-0427"
   });
 
   // --- Cursos publicados (propiedad del instructor) ---
@@ -762,6 +766,9 @@ async function main() {
   });
 
   // --- Gamificacion ---
+  // Insignias del motor real. Los pasos se dejan genericos (sin course/quiz
+  // fijo) porque el otorgamiento vive en los triggers reales por slug; el paso
+  // solo describe el requisito ("completa 1 curso", "aprueba 1 examen", etc.).
   const achDiploma = await upsertAchievement({
     slug: "primer-diploma",
     title: "Primer diploma",
@@ -772,7 +779,7 @@ async function main() {
     achievementId: achDiploma.id,
     position: 1,
     trigger: "COURSE_COMPLETED",
-    courseId: proteccion.course.id
+    requiredCount: 1
   });
 
   const achExamen = await upsertAchievement({
@@ -785,7 +792,33 @@ async function main() {
     achievementId: achExamen.id,
     position: 1,
     trigger: "QUIZ_PASSED",
-    quizId: proteccion.quiz.quizId
+    requiredCount: 1
+  });
+
+  const achPerfecto = await upsertAchievement({
+    slug: "examen-perfecto",
+    title: "Examen perfecto",
+    description: "Se otorga al aprobar un examen con 100% de aciertos.",
+    points: 150
+  });
+  await upsertAchievementStep({
+    achievementId: achPerfecto.id,
+    position: 1,
+    trigger: "QUIZ_PASSED",
+    requiredCount: 1
+  });
+
+  const achTresCursos = await upsertAchievement({
+    slug: "tres-cursos",
+    title: "Tres cursos",
+    description: "Se otorga al completar tres cursos de la plataforma.",
+    points: 300
+  });
+  await upsertAchievementStep({
+    achievementId: achTresCursos.id,
+    position: 1,
+    trigger: "COURSE_COMPLETED",
+    requiredCount: 3
   });
 
   await upsertAchievementAward({
@@ -802,6 +835,15 @@ async function main() {
     achievementId: achExamen.id,
     courseId: proteccion.course.id,
     points: 100,
+    awardedAt: COMPLETED_PROTECCION
+  });
+  // El intento sembrado del guardia fue 100%, asi que ya tiene "Examen perfecto".
+  await upsertAchievementAward({
+    sourceId: "award-examen-perfecto-guardia",
+    userId: guardia.id,
+    achievementId: achPerfecto.id,
+    courseId: proteccion.course.id,
+    points: 150,
     awardedAt: COMPLETED_PROTECCION
   });
 
