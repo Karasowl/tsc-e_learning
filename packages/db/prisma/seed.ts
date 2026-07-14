@@ -348,9 +348,49 @@ function buildCorrectGrade(question: SeededQuestion) {
 }
 
 // Siembra un intento APROBADO al 100% con sus respuestas correctas.
-async function seedPassedAttempt(opts: { quizId: string; userId: string; questions: SeededQuestion[]; sourceId: string; startedAt: Date; submittedAt: Date }) {
+async function seedPassedAttempt(opts: {
+  quizId: string;
+  userId: string;
+  questions: SeededQuestion[];
+  sourceId: string;
+  startedAt: Date;
+  submittedAt: Date;
+  // Sello de evaluación (opcional): congela el umbral/tiempo/preguntas al presentar
+  // el examen. Sin esto, el intento queda "sin sellar" y el reporte cae al umbral
+  // vivo (comportamiento previo al sello). Con esto, "Resultados con sello" muestra
+  // un veredicto congelado real (rulesVersion + hash), como en producción.
+  seal?: { passingScorePercent: number; timeLimitSec: number | null; courseVersion: number };
+}) {
   const totalMarks = opts.questions.reduce((sum, q) => sum + q.points, 0);
   const questionOrder = opts.questions.map((q) => q.id);
+
+  // Snapshot inmutable con la MISMA forma que buildRulesSnapshot del API
+  // (format 1): así el reporte lo parsea, calcula effectivePassingPercent y firma
+  // un sello estable. Los datos salen de las preguntas realmente sembradas.
+  const rulesSnapshot = opts.seal
+    ? {
+        format: 1,
+        capturedAt: opts.submittedAt.toISOString(),
+        courseVersion: opts.seal.courseVersion,
+        passingScorePercent: opts.seal.passingScorePercent,
+        timeLimitSec: opts.seal.timeLimitSec,
+        totalMarks,
+        questions: opts.questions.map((q) => ({
+          id: q.id,
+          type: q.type,
+          points: q.points,
+          options: q.options.map((o) => ({
+            id: o.id,
+            label: o.value,
+            value: o.value,
+            gapMatch: o.gapMatch ?? null,
+            isCorrect: o.isCorrect,
+            position: o.position
+          }))
+        }))
+      }
+    : undefined;
+  const rulesVersion = opts.seal ? opts.seal.courseVersion : null;
 
   const attempt = await prisma.quizAttempt.upsert({
     where: { sourceSystem_sourceId: { sourceSystem: SEED, sourceId: opts.sourceId } },
@@ -366,7 +406,9 @@ async function seedPassedAttempt(opts: { quizId: string; userId: string; questio
       totalMarks,
       earnedMarks: totalMarks,
       result: "pass",
-      questionOrder
+      questionOrder,
+      rulesSnapshot: rulesSnapshot ?? undefined,
+      rulesVersion
     },
     create: {
       sourceSystem: SEED,
@@ -382,7 +424,9 @@ async function seedPassedAttempt(opts: { quizId: string; userId: string; questio
       totalMarks,
       earnedMarks: totalMarks,
       result: "pass",
-      questionOrder
+      questionOrder,
+      rulesSnapshot: rulesSnapshot ?? undefined,
+      rulesVersion
     }
   });
 
@@ -720,7 +764,10 @@ async function main() {
     questions: proteccion.quiz.questions,
     sourceId: "attempt-proteccion-guardia",
     startedAt: new Date(COMPLETED_PROTECCION.getTime() - 30 * 60 * 1000),
-    submittedAt: COMPLETED_PROTECCION
+    submittedAt: COMPLETED_PROTECCION,
+    // Sella el intento con el umbral vivo real del examen (80%, 30 min, v1): el
+    // reporte del instructor muestra un veredicto congelado real, no simulado.
+    seal: { passingScorePercent: 80, timeLimitSec: 1800, courseVersion: 1 }
   });
 
   const folio = certificateFolio(guardia.id, proteccion.course.id, COMPLETED_PROTECCION);

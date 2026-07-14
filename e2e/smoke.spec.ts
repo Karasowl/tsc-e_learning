@@ -100,13 +100,21 @@ test("login dark-first: el tema por defecto es oscuro", async ({ page }) => {
 test.describe("privilegiados (desktop 1280x800)", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test("instructor: vista de autoria/gestion de cursos", async ({ page }) => {
-    await login(page, USERS.instructor);
-    // El instructor aterriza en "Gestionar cursos" (autoria).
-    await expect(page.getByRole("heading", { name: "Mis cursos" })).toBeVisible({
-      timeout: 30_000
-    });
-    await page.screenshot({ path: shot("instructor-autoria.png"), fullPage: true });
+  test("instructor: consola de marca (reemplaza el shell viejo)", async ({ page }) => {
+    // El instructor PURO (TEACHER sin ADMIN) ya no usa el app-shell con sidebar:
+    // aterriza en la CONSOLA del instructor de marca. El detalle vive en
+    // e2e/instructor.spec.ts; aquí solo verificamos el reemplazo del shell.
+    await waitForApi(page.request);
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Ingresar" })).toBeVisible();
+    await page.getByLabel("Correo").fill(USERS.instructor);
+    await page.getByLabel("Contraseña").fill(PASSWORD);
+    await page.getByRole("button", { name: "Ingresar" }).click();
+    await expect(page.locator("main.tconsole-shell")).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("main.app-shell")).toHaveCount(0);
+    await expect(page.locator(".tconsole-wordmark")).toHaveText("CAPACITA");
+    await expect(page.getByRole("heading", { name: "Mis cursos" })).toBeVisible({ timeout: 30_000 });
+    await page.screenshot({ path: shot("instructor-consola.png"), fullPage: true });
   });
 
   test("admin: usuarios y roles + reporte", async ({ page }) => {

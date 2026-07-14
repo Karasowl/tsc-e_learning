@@ -33,6 +33,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import DOMPurify from "dompurify";
 import { assetFileUrl, downloadAsset } from "./apiClient";
 import { AuthoringView } from "./authoring";
+import { TeacherConsole } from "./teacherConsole";
 import { CompletedCourses, CourseReviews, ProfileView, TeachersDirectory } from "./panels";
 import { UsersRolesAdmin } from "./usersAdmin";
 import { CardSkeletonGrid, toast } from "./ui";
@@ -274,6 +275,12 @@ export default function Home() {
     user?.roles.includes("STUDENT") &&
       !user?.roles.includes("TEACHER") &&
       !user?.roles.includes("ADMIN")
+  );
+  // Instructor "puro": TEACHER sin ADMIN. Recibe la CONSOLA del instructor (sin
+  // sidebar, de marca). Un ADMIN (aunque también sea instructor) conserva el
+  // shell de administración completo. Espeja la lógica de isPureStudent.
+  const isPureTeacher = Boolean(
+    user?.roles.includes("TEACHER") && !user?.roles.includes("ADMIN")
   );
   // The learner view ("Cursos inscritos" / "Aprobados") is for students. An ADMIN
   // never sees it (they run the platform); but a TEACHER who is also enrolled as a
@@ -1060,6 +1067,19 @@ export default function Home() {
         <GuardTabBar active={guardTab} onChange={setGuardTab} />
         <AscendOverlay rankName={ascend} onDismiss={() => setAscend(null)} />
       </main>
+    );
+  }
+
+  if (isPureTeacher && token && user) {
+    return (
+      <TeacherConsole
+        token={token}
+        user={user}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onLogout={logout}
+        onDisplayName={updateDisplayName}
+      />
     );
   }
 

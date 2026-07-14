@@ -48,9 +48,14 @@ type EditorCourse = {
   excerpt: string | null;
   level: string | null;
   status: string;
+  version: number;
   thumbnail?: { id: string } | null;
   modules: EditorModule[];
 };
+
+// Metadatos que el editor reporta hacia arriba (breadcrumb + pills de la consola
+// del instructor): título, estado y versión vigentes tras cargar o guardar.
+export type CourseMeta = { title: string; status: string; version: number };
 
 export function AuthoringView({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -202,13 +207,34 @@ function CourseManager({ token, isAdmin, onOpen }: { token: string; isAdmin: boo
   );
 }
 
-function CourseEditor({ token, courseId, isAdmin, onBack }: { token: string; courseId: string; isAdmin: boolean; onBack: () => void }) {
+export function CourseEditor({
+  token,
+  courseId,
+  isAdmin,
+  onBack,
+  embedded = false,
+  section,
+  onMeta
+}: {
+  token: string;
+  courseId: string;
+  isAdmin: boolean;
+  onBack: () => void;
+  // Cuando `embedded`, el editor vive DENTRO de la consola del instructor: oculta
+  // su cabecera "Volver" y sus propias pestañas (la consola las provee), y usa
+  // `section` como pestaña controlada. Sin estos props, el comportamiento es
+  // idéntico al del panel de admin (compatibilidad hacia atrás).
+  embedded?: boolean;
+  section?: "content" | "students" | "reviews";
+  onMeta?: (meta: CourseMeta) => void;
+}) {
   const [course, setCourse] = useState<EditorCourse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
   const [tab, setTab] = useState<"content" | "students" | "reviews">("content");
+  const activeTab = embedded ? section ?? "content" : tab;
   const [lessonModal, setLessonModal] = useState<{ moduleId: string; lesson?: EditorLesson } | null>(null);
   const [coverError, setCoverError] = useState(false);
   const [savedSnapshot, setSavedSnapshot] = useState<{
@@ -232,6 +258,7 @@ function CourseEditor({ token, courseId, isAdmin, onBack }: { token: string; cou
         status: data.course.status
       });
       setCoverError(false);
+      onMeta?.({ title: data.course.title, status: data.course.status, version: data.course.version });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     }
@@ -253,16 +280,23 @@ function CourseEditor({ token, courseId, isAdmin, onBack }: { token: string; cou
     setBusy(true);
     setError(null);
     try {
-      await authFetch(token, `/admin/courses/${course.id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          title: course.title,
-          excerpt: course.excerpt,
-          description: course.description,
-          level: course.level,
-          status: course.status
-        })
-      });
+      const updated = await authFetch<{ course: { title: string; status: string; version: number } }>(
+        token,
+        `/admin/courses/${course.id}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            title: course.title,
+            excerpt: course.excerpt,
+            description: course.description,
+            level: course.level,
+            status: course.status
+          })
+        }
+      );
+      // Guardar el estado como PUBLISHED (desde un estado no publicado) corta una
+      // nueva versión en el servidor: reflejamos la versión devuelta en el editor.
+      patchCourse({ version: updated.course.version });
       setSavedAt(new Date().toLocaleTimeString("es-MX"));
       setSavedSnapshot({
         title: course.title,
@@ -271,6 +305,7 @@ function CourseEditor({ token, courseId, isAdmin, onBack }: { token: string; cou
         level: course.level ?? null,
         status: course.status
       });
+      onMeta?.({ title: updated.course.title, status: updated.course.status, version: updated.course.version });
       toast.success("Curso guardado.");
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : String(saveError);
@@ -454,9 +489,11 @@ function CourseEditor({ token, courseId, isAdmin, onBack }: { token: string; cou
   if (!course) {
     return (
       <section className="data-section">
-        <button className="ghost-button" onClick={onBack} type="button">
-          <ArrowLeft aria-hidden /> Volver
-        </button>
+        {embedded ? null : (
+          <button className="ghost-button" onClick={onBack} type="button">
+            <ArrowLeft aria-hidden /> Volver
+          </button>
+        )}
         {error ? <p className="error-line">{error}</p> : <p className="empty-state">Cargando curso…</p>}
       </section>
     );
@@ -478,38 +515,51 @@ function CourseEditor({ token, courseId, isAdmin, onBack }: { token: string; cou
   }
 
   return (
-    <section className="data-section editor">
-      <div className="section-header">
-        <button className="ghost-button" onClick={() => void handleBack()} type="button">
-          <ArrowLeft aria-hidden /> Volver
-        </button>
-        <div className="quiz-actions">
-          {savedAt ? <small className="muted">Guardado {savedAt}</small> : null}
-          <button className="primary-button" disabled={busy} onClick={() => void saveCourse()} type="button">
-            <Save aria-hidden /> Guardar curso
+    <section className={`data-section editor${embedded ? " editor--embedded" : ""}`}>
+      {embedded ? (
+        activeTab === "content" ? (
+          <div className="section-header editor-save-row">
+            {savedAt ? <small className="muted">Guardado {savedAt}</small> : dirty ? <small className="muted">Cambios sin guardar</small> : null}
+            <button className="btn btn--brand" disabled={busy || !dirty} onClick={() => void saveCourse()} type="button">
+              <Save aria-hidden /> Guardar cambios
+            </button>
+          </div>
+        ) : null
+      ) : (
+        <div className="section-header">
+          <button className="ghost-button" onClick={() => void handleBack()} type="button">
+            <ArrowLeft aria-hidden /> Volver
           </button>
+          <div className="quiz-actions">
+            {savedAt ? <small className="muted">Guardado {savedAt}</small> : null}
+            <button className="primary-button" disabled={busy} onClick={() => void saveCourse()} type="button">
+              <Save aria-hidden /> Guardar curso
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {error ? <p className="error-line">{error}</p> : null}
 
-      <div className="editor-tabs">
-        <button className={`tab-button ${tab === "content" ? "active" : ""}`} onClick={() => setTab("content")} type="button">
-          <LayoutList aria-hidden /> Contenido
-        </button>
-        <button className={`tab-button ${tab === "students" ? "active" : ""}`} onClick={() => setTab("students")} type="button">
-          <Users aria-hidden /> Estudiantes con acceso
-        </button>
-        {isAdmin ? (
-          <button className={`tab-button ${tab === "reviews" ? "active" : ""}`} onClick={() => setTab("reviews")} type="button">
-            <Star aria-hidden /> Reseñas
+      {embedded ? null : (
+        <div className="editor-tabs">
+          <button className={`tab-button ${tab === "content" ? "active" : ""}`} onClick={() => setTab("content")} type="button">
+            <LayoutList aria-hidden /> Contenido
           </button>
-        ) : null}
-      </div>
+          <button className={`tab-button ${tab === "students" ? "active" : ""}`} onClick={() => setTab("students")} type="button">
+            <Users aria-hidden /> Estudiantes con acceso
+          </button>
+          {isAdmin ? (
+            <button className={`tab-button ${tab === "reviews" ? "active" : ""}`} onClick={() => setTab("reviews")} type="button">
+              <Star aria-hidden /> Reseñas
+            </button>
+          ) : null}
+        </div>
+      )}
 
-      {tab === "students" ? (
+      {activeTab === "students" ? (
         <EnrollmentManager token={token} courseId={course.id} />
-      ) : tab === "reviews" ? (
+      ) : activeTab === "reviews" ? (
         <ReviewsModeration token={token} courseId={course.id} />
       ) : (
         <>

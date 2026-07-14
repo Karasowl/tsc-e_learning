@@ -3487,3 +3487,642 @@ textarea.inp { min-height: 96px; padding: 10px 12px; line-height: var(--lh-norma
   .ascend-card,
   .ascend-mark { animation: none; }
 }
+
+/* ============================================================================
+   CONSOLA DEL INSTRUCTOR (rol TEACHER puro) — cáscara de marca, SIN sidebar.
+   Lienzo ink command-center, ancho de escritorio. Dark-first; el papel claro se
+   resuelve solo por los tokens (--ink/--fg/--line/--bg) que ya invierten en
+   :root[data-theme="light"].
+   ============================================================================ */
+.tconsole-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--ink-700);
+  color: var(--fg-1);
+}
+
+/* ─── Topbar: ancla de marca + breadcrumb · estado/versión/publicar ─────────── */
+.tconsole-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-6);
+  min-height: 64px;
+  background: color-mix(in srgb, var(--ink-800) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line-1);
+}
+.tconsole-topbar-lead {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  min-width: 0;
+}
+.tconsole-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+}
+.tconsole-wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-strong);
+  line-height: 1;
+}
+.tconsole-crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  padding-left: var(--s-4);
+  border-left: 1px solid var(--line-1);
+}
+.tconsole-crumb {
+  font-family: var(--font-body);
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+  color: var(--fg-2);
+  background: none;
+  border: 0;
+  padding: 4px 2px;
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tconsole-crumb.is-link {
+  cursor: pointer;
+  color: var(--fg-1);
+}
+.tconsole-crumb.is-link:hover {
+  color: var(--tsc-red-on-dark);
+}
+.tconsole-crumb.is-current {
+  color: var(--fg-strong);
+}
+.tconsole-crumb-sep {
+  width: 16px;
+  height: 16px;
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+.tconsole-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex: 0 0 auto;
+}
+.tconsole-version {
+  font-family: var(--font-mono);
+  letter-spacing: var(--track-mono);
+  color: var(--fg-strong);
+}
+.tconsole-version::before {
+  display: none;
+}
+.tconsole-version-next {
+  border-color: var(--line-red);
+  background: rgba(168, 36, 49, 0.16);
+}
+.tconsole-publish {
+  padding: 9px 18px;
+  font-size: var(--fs-body-sm);
+}
+.tconsole-publish svg {
+  width: 16px;
+  height: 16px;
+}
+.tconsole-published-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok);
+}
+.tconsole-published-note svg {
+  width: 14px;
+  height: 14px;
+}
+.tconsole-theme svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ─── Tira de navtabs contextuales (solo con un curso abierto) ──────────────── */
+.tconsole-tabs {
+  position: sticky;
+  top: 64px;
+  z-index: 30;
+  display: flex;
+  gap: 2px;
+  padding: 0 var(--s-6);
+  overflow-x: auto;
+  background: var(--ink-800);
+  border-bottom: 1px solid var(--line-1);
+}
+.tconsole-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 13px 16px;
+  font-family: var(--font-body);
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+  color: var(--fg-2);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+.tconsole-tab svg {
+  width: 16px;
+  height: 16px;
+}
+.tconsole-tab:hover {
+  color: var(--fg-strong);
+}
+.tconsole-tab.active {
+  color: var(--fg-strong);
+  border-bottom-color: var(--tsc-red);
+}
+
+/* ─── Área desplazable ──────────────────────────────────────────────────────── */
+.tconsole-scroll {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: var(--s-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+/* Bloque de encabezado con icono (reutilizado por varias tabs). */
+.tconsole-block-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+}
+.tconsole-block-head svg {
+  width: 18px;
+  height: 18px;
+  color: var(--tsc-red-on-dark);
+  flex: 0 0 auto;
+}
+.tconsole-block-head h3 {
+  font-size: var(--fs-h6);
+  margin: 0;
+}
+.tconsole-block-head .icon-button {
+  margin-left: auto;
+}
+
+/* ─── Lista de cursos ───────────────────────────────────────────────────────── */
+.tconsole-list-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+.tconsole-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-h4);
+  font-weight: 800;
+  letter-spacing: var(--track-display);
+  text-transform: uppercase;
+  color: var(--fg-strong);
+  line-height: 1;
+  margin-top: 4px;
+}
+.tconsole-create {
+  display: flex;
+  gap: var(--s-3);
+  align-items: stretch;
+}
+.tconsole-create-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  padding: 0 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+}
+.tconsole-create-field svg {
+  width: 16px;
+  height: 16px;
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+.tconsole-create-field input {
+  flex: 1 1 auto;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--fs-body-sm);
+}
+.tconsole-create-field input:focus {
+  outline: none;
+}
+.tconsole-create-field:focus-within {
+  border-color: var(--tsc-red);
+  box-shadow: var(--focus-ring);
+}
+
+.tconsole-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--s-4);
+}
+.tconsole-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-5);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+}
+.tconsole-card:hover {
+  border-color: var(--line-red);
+  transform: translateY(-2px);
+}
+.tconsole-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.tconsole-card-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-h6);
+  font-weight: 700;
+  color: var(--fg-strong);
+  line-height: var(--lh-snug);
+}
+.tconsole-card-counts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.tconsole-card-counts .mono-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tconsole-card-counts svg {
+  width: 14px;
+  height: 14px;
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+.tconsole-card-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: auto;
+  color: var(--tsc-red-on-dark);
+}
+.tconsole-card-go svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ─── Editor incrustado (Estructura / Ajustes) ─────────────────────────────── */
+.editor--embedded {
+  padding: 0;
+}
+.editor-save-row {
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--s-3);
+  margin-bottom: var(--s-4);
+}
+
+/* ─── Modal de publicación ─────────────────────────────────────────────────── */
+.tconsole-publish-modal .confirm-body {
+  display: grid;
+  gap: var(--s-3);
+  justify-items: center;
+  text-align: center;
+}
+.tconsole-publish-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(168, 36, 49, 0.16);
+  border: 1px solid var(--line-red);
+}
+.tconsole-publish-icon svg {
+  width: 24px;
+  height: 24px;
+  color: var(--tsc-red-on-dark);
+}
+.tconsole-version-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-1);
+}
+.tconsole-version-jump svg {
+  width: 18px;
+  height: 18px;
+  color: var(--fg-3);
+}
+
+/* ─── Reglas ────────────────────────────────────────────────────────────────── */
+.tconsole-reglas-note {
+  font-size: var(--fs-body-sm);
+  margin-top: -6px;
+}
+.tconsole-reglas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--s-4);
+}
+.tconsole-rule {
+  padding: var(--s-5);
+  display: grid;
+  gap: var(--s-3);
+}
+.tconsole-rule-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.tconsole-rule-head strong {
+  color: var(--fg-strong);
+}
+.tconsole-rule-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--s-3);
+}
+.tconsole-rule-fields label {
+  display: grid;
+  gap: 5px;
+  font-size: var(--fs-caption);
+  color: var(--fg-2);
+}
+.tconsole-rule-save {
+  justify-self: start;
+  padding: 9px 16px;
+  font-size: var(--fs-body-sm);
+}
+
+/* ─── Resultados con sello ──────────────────────────────────────────────────── */
+.tconsole-report th {
+  white-space: nowrap;
+}
+.tconsole-threshold {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tconsole-threshold-main {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+.tconsole-drift {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-xs);
+  letter-spacing: var(--track-mono);
+  white-space: nowrap;
+}
+.tconsole-drift svg {
+  width: 12px;
+  height: 12px;
+}
+.tconsole-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  background: rgba(52, 160, 106, 0.16);
+  border: 1px solid rgba(52, 160, 106, 0.4);
+  color: var(--ok-fg);
+  white-space: nowrap;
+}
+.tconsole-seal svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+.tconsole-seal-tag {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-xs);
+  letter-spacing: 0.04em;
+  color: var(--fg-strong);
+}
+.tconsole-seal .mono-label {
+  color: var(--ok-fg);
+}
+.tconsole-unsealed {
+  color: var(--fg-3);
+}
+.tconsole-seal-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-caption);
+}
+.tconsole-seal-hint svg {
+  width: 15px;
+  height: 15px;
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+
+/* ─── Vista previa ──────────────────────────────────────────────────────────── */
+.tconsole-preview {
+  display: grid;
+  gap: var(--s-5);
+}
+.tconsole-preview-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  background: var(--bg-deep);
+  border: 1px solid var(--line-1);
+  color: var(--fg-2);
+  font-size: var(--fs-body-sm);
+}
+.tconsole-preview-banner svg {
+  width: 16px;
+  height: 16px;
+  color: var(--tsc-red-on-dark);
+  flex: 0 0 auto;
+}
+.tconsole-preview-hero {
+  display: grid;
+  gap: var(--s-2);
+}
+.tconsole-preview-hero h2 {
+  font-size: var(--fs-h4);
+  color: var(--fg-strong);
+}
+.tconsole-preview-modules {
+  display: grid;
+  gap: var(--s-4);
+}
+.tconsole-preview-module {
+  padding: var(--s-5);
+  display: grid;
+  gap: var(--s-3);
+}
+.tconsole-preview-module h3 {
+  font-size: var(--fs-h6);
+}
+.tconsole-preview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.tconsole-preview-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--bg-3);
+}
+.tconsole-preview-list li > span:first-of-type {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--fg-1);
+}
+.tconsole-preview-list li svg {
+  width: 15px;
+  height: 15px;
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+.tconsole-preview-list .mono-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+.tconsole-preview-quiz {
+  border: 1px solid var(--line-red) !important;
+  background: rgba(168, 36, 49, 0.08) !important;
+}
+.tconsole-preview-quiz svg {
+  color: var(--tsc-red-on-dark) !important;
+}
+
+/* ─── Anuncios (placeholder honesto) ────────────────────────────────────────── */
+.tconsole-soon {
+  display: grid;
+  place-items: center;
+  padding: var(--s-8) 0;
+}
+.tconsole-soon-card {
+  max-width: 460px;
+  padding: var(--s-8);
+  display: grid;
+  gap: var(--s-2);
+  justify-items: center;
+  text-align: center;
+}
+.tconsole-soon-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  margin-bottom: var(--s-1);
+}
+.tconsole-soon-icon svg {
+  width: 24px;
+  height: 24px;
+  color: var(--fg-3);
+}
+
+/* ─── Ajustes ───────────────────────────────────────────────────────────────── */
+.tconsole-ajustes {
+  display: grid;
+  gap: var(--s-6);
+}
+.tconsole-danger {
+  padding: var(--s-5);
+  border-color: var(--line-red);
+  display: grid;
+  gap: var(--s-3);
+}
+.tconsole-danger .tconsole-block-head svg {
+  color: var(--tsc-red-bright);
+}
+.tconsole-danger-btn {
+  justify-self: start;
+  border-color: var(--line-red);
+  color: var(--tsc-red-on-dark);
+}
+.tconsole-danger-btn:hover {
+  background: var(--tsc-red);
+  border-color: var(--tsc-red);
+  color: #fff;
+}
+
+/* Perfil en overlay. */
+.tconsole-profile-modal .modal-body {
+  padding-top: 0;
+}
+
+/* ─── Responsive ────────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .tconsole-topbar {
+    flex-wrap: wrap;
+    gap: var(--s-2);
+  }
+  .tconsole-crumbs {
+    order: 3;
+    width: 100%;
+    padding-left: 0;
+    border-left: 0;
+  }
+  .tconsole-rule-fields {
+    grid-template-columns: 1fr;
+  }
+  .tconsole-card-counts {
+    grid-template-columns: 1fr;
+  }
+}
