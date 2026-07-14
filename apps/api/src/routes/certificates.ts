@@ -18,6 +18,7 @@ import {
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
 import {
   XP_CERTIFICATE_ISSUED,
+  detectAscension,
   grantXp,
   rankInfo,
   totalXp
@@ -154,16 +155,15 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
       pointsType: "certificate",
       occurredAt: issuedAt
     });
-    const rankBefore = rankInfo(grant.xpTotal - grant.xpDelta);
-    const rankAfter = rankInfo(grant.xpTotal);
+    const ascension = detectAscension(grant.xpTotal - grant.xpDelta, grant.xpTotal);
 
     return reply.code(201).send({
       certificate: serializeCertificate(certificate),
       gamification: {
         xpDelta: grant.xpDelta,
         xpTotal: grant.xpTotal,
-        ascended: rankAfter.level > rankBefore.level,
-        rankName: rankAfter.name
+        ascended: ascension.ascended,
+        rankName: ascension.rankName
       }
     });
   });

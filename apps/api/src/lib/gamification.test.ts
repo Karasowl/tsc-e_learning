@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { PrismaClient } from "@prisma/client";
 import {
   RANKS,
+  detectAscension,
   grantXp,
   ledgerSourceId,
   rankInfo,
@@ -146,6 +147,50 @@ describe("rankInfo", () => {
         [3600, "Comandante"]
       ]
     );
+  });
+});
+
+describe("detectAscension", () => {
+  it("detecta el ascenso al cruzar 400 hacia Guardia (395 -> 405)", () => {
+    const result = detectAscension(395, 405);
+    assert.equal(result.ascended, true);
+    assert.equal(result.rankName, "Guardia");
+  });
+
+  it("cuenta el umbral exacto como ascenso (399 -> 400 = Guardia)", () => {
+    const result = detectAscension(399, 400);
+    assert.equal(result.ascended, true);
+    assert.equal(result.rankName, "Guardia");
+  });
+
+  it("detecta el ascenso al cruzar 1000 hacia Guardia 1ª (995 -> 1005)", () => {
+    const result = detectAscension(995, 1005);
+    assert.equal(result.ascended, true);
+    assert.equal(result.rankName, "Guardia 1ª");
+  });
+
+  it("sumar XP sin cruzar umbral no es ascenso (450 -> 460 sigue Guardia)", () => {
+    const result = detectAscension(450, 460);
+    assert.equal(result.ascended, false);
+    assert.equal(result.rankName, "Guardia");
+  });
+
+  it("sin delta no hay ascenso (500 -> 500)", () => {
+    const result = detectAscension(500, 500);
+    assert.equal(result.ascended, false);
+    assert.equal(result.rankName, "Guardia");
+  });
+
+  it("es total ante entradas invalidas: negativo/NaN se tratan como 0, no lanza", () => {
+    assert.doesNotThrow(() => detectAscension(Number.NaN, Number.NaN));
+    // NaN antes y despues => ambos Aspirante (0 XP), sin ascenso.
+    const nanResult = detectAscension(Number.NaN, Number.NaN);
+    assert.equal(nanResult.ascended, false);
+    assert.equal(nanResult.rankName, "Aspirante");
+    // Negativo antes se comporta como 0 (Aspirante); cruzar a 405 asciende a Guardia.
+    const negResult = detectAscension(-50, 405);
+    assert.equal(negResult.ascended, true);
+    assert.equal(negResult.rankName, "Guardia");
   });
 });
 

@@ -93,6 +93,24 @@ export function rankInfo(xp: number): RankInfo {
   };
 }
 
+/**
+ * Detecta si pasar de `xpBefore` a `xpAfter` produjo un ascenso de rango.
+ * Funcion pura y total sobre `rankInfo` (reutiliza los mismos umbrales, no los
+ * redefine): hay ascenso cuando el nivel del rango resultante es mayor que el
+ * inicial. `rankName` es el nombre del rango tras el cambio.
+ */
+export function detectAscension(
+  xpBefore: number,
+  xpAfter: number
+): { ascended: boolean; rankName: string } {
+  const rankBefore = rankInfo(xpBefore);
+  const rankAfter = rankInfo(xpAfter);
+  return {
+    ascended: rankAfter.level > rankBefore.level,
+    rankName: rankAfter.name
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Ledger de XP (idempotente)
 // ---------------------------------------------------------------------------

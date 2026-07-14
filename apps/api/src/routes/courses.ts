@@ -7,8 +7,8 @@ import { emitStudentNotification } from "../lib/notifications.js";
 import {
   XP_LESSON_COMPLETED,
   awardCourseCompletionBadges,
-  grantXp,
-  rankInfo
+  detectAscension,
+  grantXp
 } from "../lib/gamification.js";
 
 const courseRefSchema = z.object({
@@ -284,8 +284,7 @@ export async function registerCourseRoutes(server: FastifyInstance) {
       pointsType: "lesson",
       occurredAt: completedAt
     });
-    const rankBefore = rankInfo(grant.xpTotal - grant.xpDelta);
-    const rankAfter = rankInfo(grant.xpTotal);
+    const ascension = detectAscension(grant.xpTotal - grant.xpDelta, grant.xpTotal);
 
     return {
       progress: {
@@ -296,8 +295,8 @@ export async function registerCourseRoutes(server: FastifyInstance) {
       gamification: {
         xpDelta: grant.xpDelta,
         xpTotal: grant.xpTotal,
-        ascended: rankAfter.level > rankBefore.level,
-        rankName: rankAfter.name
+        ascended: ascension.ascended,
+        rankName: ascension.rankName
       }
     };
   });
