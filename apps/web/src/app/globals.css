@@ -1,37 +1,160 @@
+/* ============================================================================
+   TSC SECURITY DESIGN SYSTEM — "Centro de Operaciones"  ·  DARK-FIRST
+   El ink oscuro es el DEFAULT (command-center). El tema claro "papel cálido"
+   (dossier) es un override opcional: :root[data-theme="light"] para toda la
+   app, o .theme-light en un subárbol (p.ej. un diploma / reporte imprimible).
+   Valores canónicos: colors_and_type.css del TSC Security Design System.
+   Se conservan TODOS los tokens legacy que ya usa la app como alias sobre la
+   escala nueva, para no romper ningún componente existente.
+   ============================================================================ */
 :root {
-  color-scheme: light;
-  /* Surfaces & text */
-  --bg: #eceff5;
-  --surface: #ffffff;
-  --surface-2: #f4f6fb;
-  --surface-3: #e9edf5;
-  --text: #131a2e;
-  --text-soft: #38435a;
-  --muted: #586273;
-  --line: #dde3ed;
-  --line-strong: #c4cdda;
-  /* TSC brand: deep navy primary + maroon accent (from the corporate logo) */
-  --navy: #131a33;
-  --navy-2: #1d274a;
-  --brand: #8c1713;
-  --brand-strong: #a51b15;
-  --brand-2: #1d274a;
-  /* Semantic colors (foreground + soft background) */
-  --ok: #16803a;
-  --ok-bg: #e7f6ec;
-  --ok-fg: #116a30;
-  --warn: #b7791f;
-  --warn-bg: #fdf2d6;
-  --warn-fg: #8a5a06;
-  --bad: #b42318;
-  --bad-bg: #fdecea;
-  --bad-fg: #9f1b12;
-  --info-bg: #e9eefb;
-  --info-fg: #1d4ed8;
-  --neutral-bg: #eef1f6;
-  --neutral-fg: #586273;
-  --focus: #8c1713;
-  /* Spacing scale (8px base) */
+  color-scheme: dark;
+
+  /* ─── BRAND RED ─────────────────────────────────────────────────────────── */
+  --tsc-red: #a82431; /* Primario: CTAs, dot del wordmark, reglas activas. */
+  --tsc-red-deep: #7e1b24; /* Hover / pressed. */
+  --tsc-maroon: #551e1b; /* Acento más pesado. */
+  --tsc-red-bright: #c62a38; /* Live / alerta (algo más caliente que el primario). */
+  --tsc-red-on-dark: #e45d6c; /* Rojo como TEXTO/links sobre ink (contraste). */
+
+  /* ─── INK SCALE (superficie oscura, command-center) ─────────────────────── */
+  --ink-900: #090f12; /* Base más profunda, detrás de todo. */
+  --ink-800: #0d161a; /* Secciones hundidas, chrome estructural. */
+  --ink-700: #121e23; /* Superficie de página por defecto. */
+  --ink-600: #182830; /* Cards / paneles sobre la página. */
+  --ink-500: #21343d; /* Raised / hover / fills de input. */
+  --ink-400: #2c434d; /* Bordes fuertes, bloques divisores. */
+
+  /* ─── TEXTO SOBRE INK ───────────────────────────────────────────────────── */
+  --tsc-white: #ffffff;
+  --fg-strong: #ffffff; /* Titulares, cifras clave. */
+  --fg-1: rgba(255, 255, 255, 0.86); /* Cuerpo. */
+  --fg-2: rgba(255, 255, 255, 0.62); /* Secundario / captions. */
+  --fg-3: rgba(255, 255, 255, 0.42); /* Terciario / disabled / hints. */
+  --fg-accent: var(--tsc-red-on-dark); /* Eyebrows, acento inline, links. */
+
+  /* ─── HAIRLINES (la estructura se dibuja con líneas de 1px, no con glow) ─── */
+  --line-1: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.15);
+  --line-red: rgba(168, 36, 49, 0.55);
+
+  /* ─── PAPER (raro; solo diploma / reporte impreso — el sistema es dark) ──── */
+  --paper: #f4f2ee;
+  --paper-ink: #11181d;
+
+  /* ─── STATUS OPERATIVO ──────────────────────────────────────────────────── */
+  --ok: #34a06a;
+  --watch: #c8922e;
+  --alert: var(--tsc-red-bright);
+  --info: #3e78c2;
+  --wa-green: #25d366; /* Botón de WhatsApp — específico, no reutilizar. */
+
+  /* ─── SURFACE / BG (aliases semánticos canónicos) ───────────────────────── */
+  --bg-base: var(--ink-900);
+  --bg-1: var(--ink-700); /* Página */
+  --bg-2: var(--ink-600); /* Card */
+  --bg-3: var(--ink-500); /* Raised / input */
+  --bg-deep: var(--ink-800); /* Hundido / secciones ops */
+  --border-1: var(--line-1);
+  --border-2: var(--line-2);
+
+  /* ─── FAMILIAS TIPOGRÁFICAS (next/font: Saira · Hanken · IBM Plex Mono) ──── */
+  --font-display: var(--font-saira), "Oswald", "Arial Narrow", system-ui, sans-serif;
+  --font-body: var(--font-hanken), var(--font-inter), system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: var(--font-body); /* compat */
+
+  /* ─── ESCALA TIPOGRÁFICA CANÓNICA (rem) ─────────────────────────────────── */
+  --fs-mono-xs: 0.6875rem; /* 11 — códigos, kicker labels */
+  --fs-eyebrow: 0.8125rem; /* 13 */
+  --fs-caption: 0.8125rem; /* 13 */
+  --fs-body-sm: 0.9375rem; /* 15 */
+  --fs-body: 1.0625rem; /* 17 */
+  --fs-body-lg: 1.1875rem; /* 19 */
+  --fs-h6: 1.25rem; /* 20 */
+  --fs-h5: 1.625rem; /* 26 */
+  --fs-h4: 2.125rem; /* 34 */
+  --fs-h3: 2.75rem; /* 44 */
+  --fs-h2: 3.75rem; /* 60 */
+  --fs-h1: 5rem; /* 80 */
+  --fs-display: 7rem; /* 112 */
+  --lh-display: 0.86;
+  --lh-tight: 1;
+  --lh-snug: 1.18;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.65;
+
+  /* ─── TRACKING ──────────────────────────────────────────────────────────── */
+  --track-display: 0.005em;
+  --track-eyebrow: 0.18em;
+  --track-mono: 0.08em;
+
+  /* ─── SPACING / LAYOUT CANÓNICO (base 4px) ──────────────────────────────── */
+  --s-1: 4px;   --s-2: 8px;   --s-3: 12px;  --s-4: 16px;
+  --s-5: 20px;  --s-6: 24px;  --s-8: 32px;  --s-10: 40px;
+  --s-12: 48px; --s-16: 64px; --s-20: 80px; --s-24: 96px; --s-32: 128px;
+  --container: 1200px;
+  --container-pad: 24px;
+  --section-y: clamp(56px, 8vw, 112px);
+  --header-h: 88px;
+
+  /* ─── RADII CANÓNICOS (pill reservado a botones + status pills) ──────────── */
+  --r-xs: 2px;
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* ─── SOMBRAS CANÓNICAS (profundidad ink, nunca glow) ───────────────────── */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 10px 28px rgba(0, 0, 0, 0.38);
+  --shadow-3: 0 24px 60px rgba(0, 0, 0, 0.48);
+  --shadow-red: 0 10px 30px rgba(168, 36, 49, 0.45);
+  --focus-ring: 0 0 0 3px rgba(168, 36, 49, 0.45);
+
+  /* ─── MOTION ────────────────────────────────────────────────────────────── */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --t-fast: 180ms;
+  --t-base: 320ms;
+  --t-slow: 750ms;
+
+  /* ══════════════════════════════════════════════════════════════════════════
+     ALIASES LEGACY (compat) → mapeados a la escala ink dark-first.
+     Toda la app existente usa estos nombres; se conservan como alias para no
+     romper ningún componente. En .theme-light se redeclaran directamente.
+     ══════════════════════════════════════════════════════════════════════════ */
+  --bg: var(--ink-700);        /* página */
+  --surface: var(--ink-600);   /* card */
+  --surface-2: var(--ink-500); /* raised / input */
+  --surface-3: var(--ink-400); /* divisor fuerte */
+  --text: var(--fg-strong);
+  --text-soft: var(--fg-1);
+  --muted: var(--fg-2);
+  --line: var(--line-1);
+  --line-strong: var(--line-2);
+  --navy: var(--ink-800);      /* chrome estructural (sidebar) */
+  --navy-2: var(--ink-500);
+  --brand: var(--tsc-red-on-dark); /* rojo como texto/icono sobre ink */
+  --brand-strong: #f0838f;     /* hover (más claro sobre ink) */
+  --brand-2: var(--fg-1);      /* texto claro sobre ink */
+  --ok-bg: rgba(52, 160, 106, 0.18);
+  --ok-fg: #6fd39b;
+  --warn: #c8922e;
+  --warn-bg: rgba(200, 146, 46, 0.18);
+  --warn-fg: #e6b95e;
+  --bad: var(--tsc-red-on-dark);
+  --bad-bg: rgba(198, 42, 56, 0.2);
+  --bad-fg: #f4928b;
+  --info-bg: rgba(62, 120, 194, 0.2);
+  --info-fg: #8ab4f8;
+  --neutral-bg: rgba(255, 255, 255, 0.07);
+  --neutral-fg: var(--fg-2);
+  --focus: var(--tsc-red-on-dark);
+
+  /* Legacy spacing (nombres sin cambio) */
   --space-4: 4px;
   --space-8: 8px;
   --space-12: 12px;
@@ -40,7 +163,8 @@
   --space-24: 24px;
   --space-32: 32px;
   --space-48: 48px;
-  /* Typographic scale */
+
+  /* Legacy escala tipográfica (densidad del LMS) */
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
   --text-base: 0.9375rem;
@@ -56,50 +180,102 @@
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
-  /* Radius + shadow */
-  --radius-sm: 8px;
-  --radius-md: 10px;
+
+  /* Legacy radios */
+  --radius-sm: 6px;
+  --radius-md: 8px;
   --radius-lg: 14px;
-  --radius-xl: 18px;
+  --radius-xl: 20px;
   --radius-full: 999px;
-  --shadow-sm: 0 1px 2px rgba(19, 26, 51, 0.06), 0 1px 1px rgba(19, 26, 51, 0.04);
-  --shadow-md: 0 6px 16px rgba(19, 26, 51, 0.08);
-  --shadow-lg: 0 18px 40px rgba(19, 26, 51, 0.16);
-  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Legacy sombras → alias a las canónicas (dark) */
+  --shadow-sm: var(--shadow-1);
+  --shadow-md: var(--shadow-2);
+  --shadow-lg: var(--shadow-3);
 }
 
-/* ===== Tema oscuro (override de tokens) ===== */
-[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #0e1320;
-  --surface: #161d2e;
-  --surface-2: #1d2638;
-  --surface-3: #273046;
-  --text: #e7ecf6;
-  --text-soft: #b9c3d8;
-  --muted: #8b97af;
-  --line: #2a3349;
-  --line-strong: #3b4763;
-  --brand: #e0564f;
-  --brand-strong: #ec6a63;
-  --brand-2: #ccd5e8;
-  --ok: #22a256;
-  --ok-bg: rgba(34, 197, 94, 0.16);
-  --ok-fg: #6ee7a0;
-  --warn: #c79019;
-  --warn-bg: rgba(234, 179, 8, 0.16);
-  --warn-fg: #f0c44d;
-  --bad: #e0564f;
-  --bad-bg: rgba(239, 68, 68, 0.16);
-  --bad-fg: #f4928b;
-  --info-bg: rgba(59, 130, 246, 0.16);
-  --info-fg: #8ab4f8;
-  --neutral-bg: rgba(255, 255, 255, 0.07);
-  --neutral-fg: #8b97af;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 18px 40px rgba(0, 0, 0, 0.55);
+/* ============================================================================
+   TEMA CLARO — papel cálido (dossier).
+   Se aplica como :root[data-theme="light"] (toda la app) o como .theme-light
+   en un subárbol permanente (diploma / reporte imprimible). Se redeclaran los
+   tokens canónicos Y los alias legacy directamente, porque los alias declarados
+   en :root no re-resuelven desde un override de la escala ink en un descendiente.
+   ============================================================================ */
+:root[data-theme="light"],
+.theme-light {
+  color-scheme: light;
+
+  /* escala ink → pasos de papel cálido (cards más claras que la página) */
+  --ink-900: #e6e3db;
+  --ink-800: #ece9e2;
+  --ink-700: #f4f2ec;
+  --ink-600: #ffffff;
+  --ink-500: #f6f4ef;
+  --ink-400: #cbc7be;
+
+  /* texto sobre papel */
+  --fg-strong: #15191c;
+  --fg-1: rgba(21, 25, 28, 0.86);
+  --fg-2: rgba(21, 25, 28, 0.6);
+  --fg-3: rgba(21, 25, 28, 0.42);
+  --fg-accent: var(--tsc-red); /* el rojo se lee bien como texto sobre papel */
+
+  /* aliases de superficie explícitos (para funcionar también como subárbol) */
+  --bg-base: #e6e3db;
+  --bg-1: #f4f2ec;
+  --bg-2: #ffffff;
+  --bg-3: #f6f4ef;
+  --bg-deep: #ece9e2;
+
+  /* hairlines → alpha oscuro */
+  --line-1: rgba(21, 25, 28, 0.1);
+  --line-2: rgba(21, 25, 28, 0.16);
+  --line-red: rgba(168, 36, 49, 0.45);
+
+  /* status en papel */
+  --ok: #2f8f5e;
+  --watch: #b6831f;
+  --info: #2c5e9e;
+
+  /* sombras suaves sobre papel */
+  --shadow-1: 0 1px 2px rgba(21, 25, 28, 0.08);
+  --shadow-2: 0 10px 28px rgba(21, 25, 28, 0.1);
+  --shadow-3: 0 24px 60px rgba(21, 25, 28, 0.14);
+
+  /* ─── ALIASES LEGACY (papel cálido) — directos para que funcione en subárbol ─── */
+  --bg: #f4f2ec;
+  --surface: #ffffff;
+  --surface-2: #f6f4ef;
+  --surface-3: #ece9e2;
+  --text: #15191c;
+  --text-soft: rgba(21, 25, 28, 0.86);
+  --muted: rgba(21, 25, 28, 0.6);
+  --line: rgba(21, 25, 28, 0.1);
+  --line-strong: #cbc7be;
+  --navy: #0d161a; /* chrome estructural sigue ink en claro (por diseño) */
+  --navy-2: #182830;
+  --brand: #a82431;
+  --brand-strong: #7e1b24;
+  --brand-2: #182830;
+  --ok-bg: #e4f1ea;
+  --ok-fg: #1f6a45;
+  --warn: #b6831f;
+  --warn-bg: #faf0d8;
+  --warn-fg: #875e10;
+  --bad: #b42330;
+  --bad-bg: #fbe9ea;
+  --bad-fg: #8e1b24;
+  --info-bg: #e6eef7;
+  --info-fg: #2c5e9e;
+  --neutral-bg: #ece9e2;
+  --neutral-fg: rgba(21, 25, 28, 0.6);
+  --focus: #a82431;
+  --shadow-sm: 0 1px 2px rgba(21, 25, 28, 0.08);
+  --shadow-md: 0 10px 28px rgba(21, 25, 28, 0.1);
+  --shadow-lg: 0 24px 60px rgba(21, 25, 28, 0.16);
 }
+:root[data-theme="light"] ::selection,
+.theme-light ::selection { background: var(--tsc-red); color: #fff; }
 
 * {
   box-sizing: border-box;
@@ -239,10 +415,11 @@ button:disabled {
 
 .eyebrow {
   margin: 0 0 4px;
+  font-family: var(--font-body);
   color: var(--brand);
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
+  font-weight: 600;
+  letter-spacing: var(--track-eyebrow);
   text-transform: uppercase;
 }
 
@@ -257,7 +434,9 @@ h1,
 h2,
 h3 {
   margin: 0;
+  font-family: var(--font-display);
   line-height: var(--leading-tight);
+  letter-spacing: var(--track-display);
   font-weight: var(--weight-bold);
 }
 
@@ -303,7 +482,7 @@ input:focus,
 select:focus,
 textarea:focus,
 button:focus-visible {
-  outline: 3px solid rgba(140, 23, 19, 0.22);
+  outline: 3px solid rgba(168, 36, 49, 0.4);
   outline-offset: 2px;
   border-color: var(--brand);
 }
@@ -325,6 +504,13 @@ button:focus-visible {
   white-space: nowrap;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease,
     box-shadow 120ms ease, transform 80ms ease;
+}
+
+/* Pill = señal de marca, reservada a los CTA de texto. */
+.primary-button,
+.secondary-button,
+.ghost-button {
+  border-radius: var(--radius-full);
 }
 
 .primary-button:active:not(:disabled),
@@ -460,9 +646,9 @@ button:focus-visible {
 }
 
 .nav-button.active {
-  background: rgba(140, 23, 19, 0.85);
+  background: rgba(168, 36, 49, 0.92);
   color: #fff;
-  box-shadow: inset 3px 0 0 #f0b9b3;
+  box-shadow: inset 3px 0 0 var(--tsc-red-on-dark);
 }
 
 .nav-button.active svg {
@@ -585,9 +771,12 @@ td small,
   min-height: 30px;
   align-items: center;
   border-radius: 999px;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 800;
+  padding: 0 11px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono);
 }
 
 .completion-chip {
@@ -804,7 +993,11 @@ td small,
 
 .metric strong {
   margin-top: 4px;
+  font-family: var(--font-mono);
   font-size: 24px;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 
 .table-wrap {
@@ -837,10 +1030,11 @@ th {
   z-index: 1;
   background: var(--surface-2);
   color: var(--muted);
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: var(--track-mono);
 }
 
 tbody tr {
@@ -1831,7 +2025,7 @@ label textarea {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(19, 26, 51, 0.55);
+  background: rgba(9, 15, 18, 0.62);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -2157,7 +2351,7 @@ label textarea {
 }
 
 .primary-button.danger:hover:not(:disabled) {
-  background: #9f1b12;
+  background: var(--bad-fg);
 }
 
 /* ===== Skeletons ===== */
@@ -2357,10 +2551,11 @@ label textarea {
   background: transparent;
   padding: 0;
   font: inherit;
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: var(--track-mono);
   color: var(--muted);
   cursor: pointer;
 }
@@ -2371,8 +2566,14 @@ label textarea {
 }
 
 .th-sort-ind {
+  display: inline-flex;
   font-size: 10px;
   opacity: 0.7;
+}
+
+.th-sort-ind svg {
+  width: 14px;
+  height: 14px;
 }
 
 .pagination {
@@ -2722,7 +2923,7 @@ label textarea {
     inset: 0;
     z-index: 70;
     border: 0;
-    background: rgba(19, 26, 51, 0.5);
+    background: rgba(9, 15, 18, 0.55);
   }
 
   .nav-close,
@@ -2730,3 +2931,84 @@ label textarea {
     display: inline-flex;
   }
 }
+
+/* ============================================================================
+   PRIMITIVAS CANÓNICAS DEL DESIGN SYSTEM (utilidades compartidas)
+   Copiadas de colors_and_type.css. Clases nuevas: no colisionan con el markup
+   existente (los componentes actuales heredan el look vía tokens legacy).
+   ============================================================================ */
+
+/* Botones — la pill es la señal de marca. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.55em;
+  font-family: var(--font-body); font-weight: 600; font-size: var(--fs-body-sm); line-height: 1;
+  padding: 15px 30px; border-radius: var(--r-pill); border: 1px solid transparent;
+  cursor: pointer; text-align: center; white-space: nowrap;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out),
+              border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+}
+.btn:active { transform: translateY(1px); }
+.btn--brand { background: var(--tsc-red); color: #fff; }
+.btn--brand:hover { background: var(--tsc-red-deep); }
+.btn--light { background: #fff; color: var(--ink-800); }
+.btn--light:hover { background: var(--tsc-red); color: #fff; }
+.btn--dark { background: rgba(255, 255, 255, 0.06); color: #fff; border-color: var(--line-2); }
+.btn--dark:hover { background: var(--tsc-red); border-color: var(--tsc-red); }
+.btn--ghost { background: transparent; color: var(--fg-1); border-color: var(--line-2); }
+.btn--ghost:hover { border-color: #fff; color: #fff; }
+.btn--wa { background: var(--wa-green); color: #fff; }
+.btn--wa:hover { background: #1da851; }
+
+/* Status pills — semántica operativa. */
+.pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono); font-size: var(--fs-mono-xs); font-weight: 500;
+  text-transform: uppercase; letter-spacing: var(--track-mono);
+  padding: 5px 12px 5px 10px; border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.06); color: var(--fg-1); border: 1px solid var(--line-1);
+}
+.pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--fg-3); }
+.pill--ok::before    { background: var(--ok); box-shadow: 0 0 0 3px rgba(52, 160, 106, 0.22); }
+.pill--live::before  { background: var(--alert); box-shadow: 0 0 0 3px rgba(198, 42, 56, 0.25); animation: tsc-pulse 1.6s var(--ease-in-out) infinite; }
+.pill--watch::before { background: var(--watch); }
+
+@keyframes tsc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* Card — definida por hairline, elevada por sombra deep-ink. Sin lift en hover. */
+.card {
+  background: var(--bg-2); border: 1px solid var(--line-1);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-1);
+}
+
+/* Section + head. */
+.section { padding-block: var(--section-y); }
+.section-head { max-width: 760px; margin: 0 auto var(--s-12); text-align: center; }
+.section-head[data-align="left"] { text-align: left; max-width: none; margin-inline: 0; }
+.section-title { font-family: var(--font-display); font-weight: 700; font-size: clamp(36px, 5vw, 60px); line-height: 0.96; color: var(--fg-strong); text-transform: uppercase; letter-spacing: var(--track-display); }
+.section-sub { margin-top: var(--s-4); font-size: var(--fs-body); color: var(--fg-2); }
+
+/* Etiquetas operativas. */
+.mono-label {
+  font-family: var(--font-mono); font-size: var(--fs-mono-xs); font-weight: 500;
+  text-transform: uppercase; letter-spacing: var(--track-mono); color: var(--fg-2);
+}
+.label-caps {
+  font-family: var(--font-body); font-size: var(--fs-caption);
+  text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; color: var(--fg-2);
+}
+
+/* Reglas divisoras. */
+.rule { height: 1px; background: var(--line-1); border: 0; }
+.rule--red { height: 2px; background: var(--tsc-red); width: 56px; border: 0; }
+
+/* Helper de input on-spec (fill raised = ink-500, hairline, foco rojo). */
+.inp {
+  width: 100%; min-height: 42px; padding: 0 12px;
+  font-family: var(--font-body); font-size: var(--fs-body-sm);
+  color: var(--text); background: var(--bg-3);
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
+}
+.inp::placeholder { color: var(--fg-3); }
+.inp:focus-visible { outline: none; border-color: var(--tsc-red); box-shadow: var(--focus-ring); }
+textarea.inp { min-height: 96px; padding: 10px 12px; line-height: var(--lh-normal); }

@@ -1,24 +1,31 @@
 "use client";
 
 import {
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   Award,
   BarChart3,
   Bell,
   BookOpen,
   Boxes,
   Check,
+  ChevronDown,
   ChevronRight,
+  ChevronsUpDown,
+  ChevronUp,
   Clock,
   Download,
   FileText,
   GraduationCap,
   LogOut,
   Mail,
+  Moon,
   Play,
   RefreshCw,
   Search,
   ShieldCheck,
+  Sun,
   UserRound,
   X
 } from "lucide-react";
@@ -218,7 +225,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogFilter, setCatalogFilter] = useState<"all" | "in-progress" | "not-started" | "completed">("all");
   // Ids de cursos cuya portada migrada no cargó: caemos al placeholder de marca.
@@ -341,7 +348,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+    // Dark-first: sin data-theme = oscuro; solo 'light' explícito activa el papel.
+    setTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
   }, []);
 
   useEffect(() => {
@@ -724,7 +732,12 @@ export default function Home() {
   function toggleTheme() {
     setTheme((current) => {
       const next = current === "dark" ? "light" : "dark";
-      document.documentElement.dataset.theme = next;
+      // Oscuro es el default: se activa quitando el atributo (no como valor).
+      if (next === "light") {
+        document.documentElement.dataset.theme = "light";
+      } else {
+        delete document.documentElement.dataset.theme;
+      }
       window.localStorage.setItem("tsc_theme", next);
       return next;
     });
@@ -871,7 +884,7 @@ export default function Home() {
           </div>
           <div className="topbar-actions">
             <button className="icon-button theme-toggle" onClick={toggleTheme} type="button" aria-label="Cambiar tema" title="Cambiar tema">
-              {theme === "dark" ? "☀️" : "🌙"}
+              {theme === "dark" ? <Sun aria-hidden /> : <Moon aria-hidden />}
             </button>
             <div className="topbar-user">
             <button
@@ -1577,7 +1590,7 @@ function SortHeader({
       <button type="button" className={`th-sort ${active ? "active" : ""}`} onClick={() => onSort(sortKey)}>
         {label}
         <span className="th-sort-ind" aria-hidden>
-          {active ? (sort.dir === "asc" ? "▲" : "▼") : "⇅"}
+          {active ? (sort.dir === "asc" ? <ChevronUp /> : <ChevronDown />) : <ChevronsUpDown />}
         </span>
       </button>
     </th>
@@ -1921,8 +1934,8 @@ function OrderingInput({
           <span className="order-num">{index + 1}</span>
           <span className="order-text">{byId.get(id)?.value ?? ""}</span>
           <span className="order-controls">
-            <button type="button" className="icon-button" onClick={() => move(index, -1)} title="Subir">↑</button>
-            <button type="button" className="icon-button" onClick={() => move(index, 1)} title="Bajar">↓</button>
+            <button type="button" className="icon-button" onClick={() => move(index, -1)} title="Subir" aria-label="Subir"><ArrowUp aria-hidden /></button>
+            <button type="button" className="icon-button" onClick={() => move(index, 1)} title="Bajar" aria-label="Bajar"><ArrowDown aria-hidden /></button>
           </span>
         </div>
       ))}
@@ -2124,7 +2137,7 @@ function buildReportPrintHtml(rows: ReportRow[], summary: Record<string, number>
   @media print { .no-print { display: none !important; } body { margin: 10mm; } }
 </style>
 </head>
-<body onload="setTimeout(function(){ window.print(); }, 300)">
+<body class="theme-light" onload="setTimeout(function(){ window.print(); }, 300)">
   <div class="toolbar no-print"><button type="button" onclick="window.print()">Imprimir / Guardar PDF</button></div>
   <header>
     <img src="${escapeHtml(typeof window !== "undefined" ? window.location.origin : "")}/tsc-logo.png" alt="TSC" onerror="this.remove()">

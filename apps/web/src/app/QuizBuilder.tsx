@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, GripVertical, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, GripVertical, Plus, Save, Trash2 } from "lucide-react";
 import { authFetch, errorText } from "./apiClient";
 import { confirmDialog, toast } from "./ui";
 
@@ -454,8 +454,8 @@ function QuestionForm({
               ) : null}
               {type === "ORDERING" ? (
                 <span className="order-controls">
-                  <button type="button" className="icon-button" onClick={() => move(index, -1)} title="Subir">↑</button>
-                  <button type="button" className="icon-button" onClick={() => move(index, 1)} title="Bajar">↓</button>
+                  <button type="button" className="icon-button" onClick={() => move(index, -1)} title="Subir" aria-label="Subir"><ArrowUp aria-hidden /></button>
+                  <button type="button" className="icon-button" onClick={() => move(index, 1)} title="Bajar" aria-label="Bajar"><ArrowDown aria-hidden /></button>
                 </span>
               ) : null}
               <button type="button" className="icon-button" onClick={() => removeRow(index)} title="Quitar">
