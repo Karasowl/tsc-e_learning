@@ -709,7 +709,7 @@ async function main() {
     durationSec: 7200,
     teacherId: instructor.id,
     publishedAt: new Date("2026-03-01T12:00:00.000Z"),
-    videoUrl: "https://www.youtube.com/watch?v=proteccion-ejecutiva-demo",
+    videoUrl: "https://www.youtube.com/watch?v=kWsZrtGFip0",
     quizSlug: "proteccion-ejecutiva-examen",
     quizTitle: "Examen final de Proteccion Ejecutiva",
     questions: PROTECCION_QUESTIONS
@@ -724,7 +724,7 @@ async function main() {
     durationSec: 5400,
     teacherId: instructor.id,
     publishedAt: new Date("2026-03-10T12:00:00.000Z"),
-    videoUrl: "https://www.youtube.com/watch?v=custodia-mercancia-demo",
+    videoUrl: "https://www.youtube.com/watch?v=Ng18yL1hDDo",
     quizSlug: "custodia-de-mercancia-examen",
     quizTitle: "Examen final de Custodia de Mercancia",
     questions: CUSTODIA_QUESTIONS
@@ -739,7 +739,7 @@ async function main() {
     durationSec: 3600,
     teacherId: instructor.id,
     publishedAt: new Date("2026-03-20T12:00:00.000Z"),
-    videoUrl: "https://www.youtube.com/watch?v=seguridad-intramuros-demo",
+    videoUrl: "https://www.youtube.com/watch?v=cpcqOQSIGY0",
     quizSlug: "seguridad-intramuros-examen",
     quizTitle: "Examen final de Seguridad Intramuros",
     questions: INTRAMUROS_QUESTIONS
