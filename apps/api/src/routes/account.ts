@@ -2,6 +2,7 @@ import { getPrisma } from "@tsc-capacita/db";
 import { hashApplicationPassword, verifyWordPressPassword } from "@tsc-capacita/wp-compat";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { logAdminAction } from "../lib/audit.js";
 import { isAdmin, requireAuth } from "../lib/auth.js";
 
 const updateMeSchema = z.object({
@@ -138,6 +139,14 @@ export async function registerAccountRoutes(server: FastifyInstance) {
         legacyPasswordHash: null,
         legacyPasswordAlgo: null
       }
+    });
+    await logAdminAction({
+      actorId: auth.userId,
+      action: "USER_PASSWORD_RESET",
+      summary: `Restableció la contraseña de ${target.displayName} (${target.email})`,
+      targetType: "user",
+      targetId: target.id,
+      logger: request.log
     });
     return { ok: true };
   });

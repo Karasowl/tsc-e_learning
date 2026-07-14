@@ -3,6 +3,7 @@ import { hashApplicationPassword } from "@tsc-capacita/wp-compat";
 import type { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { logAdminAction } from "../lib/audit.js";
 import { isAdmin, isTeacherOrAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
 
 const courseIdSchema = z.object({
@@ -211,6 +212,16 @@ export async function registerEnrollmentAdminRoutes(server: FastifyInstance) {
       include: { user: { select: { id: true, displayName: true, email: true, serviceLabel: true } } }
     });
 
+    await logAdminAction({
+      actorId: auth.userId,
+      action: "ENROLLMENT_GRANTED",
+      summary: `Inscribió a ${enrollment.user.displayName} en ${course.title}`,
+      targetType: "course",
+      targetId: course.id,
+      metadata: { userId: user.id, courseTitle: course.title },
+      logger: request.log
+    });
+
     return reply.code(201).send({ enrollment: serializeEnrollment(enrollment) });
   });
 
@@ -238,13 +249,24 @@ export async function registerEnrollmentAdminRoutes(server: FastifyInstance) {
     }
 
     const enrollment = await getPrisma().enrollment.findUnique({
-      where: { userId_courseId: { userId: params.data.userId, courseId: course.id } }
+      where: { userId_courseId: { userId: params.data.userId, courseId: course.id } },
+      include: { user: { select: { displayName: true } } }
     });
     if (!enrollment) {
       return reply.code(404).send({ error: "Enrollment not found" });
     }
 
     await getPrisma().enrollment.delete({ where: { id: enrollment.id } });
+
+    await logAdminAction({
+      actorId: auth.userId,
+      action: "ENROLLMENT_REVOKED",
+      summary: `Revocó el acceso de ${enrollment.user.displayName} a ${course.title}`,
+      targetType: "course",
+      targetId: course.id,
+      metadata: { userId: params.data.userId, courseTitle: course.title },
+      logger: request.log
+    });
 
     return { deleted: true };
   });

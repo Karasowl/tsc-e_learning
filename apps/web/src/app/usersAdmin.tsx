@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { RefreshCw, Search, ShieldCheck, UserPlus, X } from "lucide-react";
+import { Check, Copy, Link2, Mail, RefreshCw, Search, Send, ShieldCheck, UserPlus, X } from "lucide-react";
 import { authFetch, errorText } from "./apiClient";
 import { confirmDialog, promptDialog, toast } from "./ui";
 
@@ -18,6 +18,12 @@ type AdminUser = {
   createdAt: string;
 };
 
+type InvitationResult = {
+  emailed: boolean;
+  expiresAt: string;
+  activationUrl: string | null;
+};
+
 function lastAccessEs(value: string | null) {
   if (!value) {
     return "Sin accesos aún";
@@ -28,7 +34,7 @@ function lastAccessEs(value: string | null) {
 const ALL_ROLES: Role[] = ["ADMIN", "TEACHER", "STUDENT"];
 
 function roleEs(role: Role) {
-  return role === "ADMIN" ? "Administrador" : role === "TEACHER" ? "Profesor" : "Estudiante";
+  return role === "ADMIN" ? "Administrador" : role === "TEACHER" ? "Instructor" : "Colaborador";
 }
 
 function statusEs(status: string) {
@@ -39,21 +45,37 @@ function statusClass(status: string) {
   return status === "ACTIVE" ? "activo" : status === "DISABLED" ? "disabled" : "invited";
 }
 
-export function UsersRolesAdmin({ token, currentUserId }: { token: string; currentUserId: string }) {
+export function UsersRolesAdmin({
+  token,
+  currentUserId,
+  initialQuery,
+  queryNonce
+}: {
+  token: string;
+  currentUserId: string;
+  initialQuery?: string;
+  queryNonce?: number;
+}) {
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [term, setTerm] = useState("");
+  const [term, setTerm] = useState(initialQuery ?? "");
   const [roleFilter, setRoleFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  // Activation link surfaced when an invitation was created but not emailed
+  // (dev / SMTP unavailable) so the admin can hand it off manually.
+  const [pendingInvite, setPendingInvite] = useState<{ email: string; url: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  async function load() {
+  async function load(overrideTerm?: string) {
     setError(null);
     setBusy(true);
     try {
       const params = new URLSearchParams();
-      if (term.trim()) {
-        params.set("q", term.trim());
+      const searchTerm = (overrideTerm ?? term).trim();
+      if (searchTerm) {
+        params.set("q", searchTerm);
       }
       if (roleFilter) {
         params.set("role", roleFilter);
@@ -72,6 +94,17 @@ export function UsersRolesAdmin({ token, currentUserId }: { token: string; curre
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // React to a search driven from the Ops-Center topbar (jump-to-collaborators).
+  useEffect(() => {
+    if (queryNonce === undefined) {
+      return;
+    }
+    const next = initialQuery ?? "";
+    setTerm(next);
+    void load(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryNonce]);
 
   function patchUser(userId: string, patch: Partial<AdminUser>) {
     setUsers((current) => current.map((user) => (user.id === userId ? { ...user, ...patch } : user)));
@@ -215,13 +248,90 @@ export function UsersRolesAdmin({ token, currentUserId }: { token: string; curre
     }
   }
 
+  // Real invitation: creates the account as INVITED with an activation token. The
+  // invitee sets their own password from the link (emailed in prod; surfaced here
+  // when it wasn't sent). No password is chosen by the admin — this is the fix for
+  // the old "forced ACTIVE" simulation.
+  async function inviteUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formEl = event.currentTarget;
+    const data = new FormData(formEl);
+    const displayName = String(data.get("displayName") ?? "").trim();
+    const email = String(data.get("email") ?? "").trim();
+    const role = String(data.get("role") ?? "STUDENT") as Role;
+    if (!displayName || !email) {
+      setError("Completa nombre y correo para invitar.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setPendingInvite(null);
+    setCopied(false);
+    try {
+      const result = await authFetch<{ user: AdminUser; invitation: InvitationResult }>(token, "/admin/users/invite", {
+        method: "POST",
+        body: JSON.stringify({ displayName, email, roles: [role] })
+      });
+      formEl.reset();
+      setShowInvite(false);
+      await load();
+      if (result.invitation.emailed) {
+        toast.success(`Invitación enviada por correo a ${email}.`);
+      } else if (result.invitation.activationUrl) {
+        setPendingInvite({ email, url: result.invitation.activationUrl });
+        toast.success("Invitación creada. Comparte el enlace de activación.");
+      } else {
+        toast.success("Invitación creada.");
+      }
+    } catch (inviteError) {
+      const message = errorText(inviteError);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyInviteLink() {
+    if (!pendingInvite) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(pendingInvite.url);
+      setCopied(true);
+      toast.success("Enlace copiado.");
+      window.setTimeout(() => setCopied(false), 2500);
+    } catch {
+      toast.error("No se pudo copiar. Selecciona y copia el enlace manualmente.");
+    }
+  }
+
   return (
     <section className="data-section users-admin">
       <div className="section-header">
-        <h2>Usuarios y roles</h2>
+        <h2>Colaboradores y roles</h2>
         <div className="quiz-actions">
-          <button className="secondary-button" disabled={busy} onClick={() => setShowCreate((value) => !value)} type="button">
-            <UserPlus aria-hidden /> Crear usuario
+          <button
+            className="btn btn--brand"
+            disabled={busy}
+            onClick={() => {
+              setShowInvite((value) => !value);
+              setShowCreate(false);
+            }}
+            type="button"
+          >
+            <Send aria-hidden /> Invitar
+          </button>
+          <button
+            className="secondary-button"
+            disabled={busy}
+            onClick={() => {
+              setShowCreate((value) => !value);
+              setShowInvite(false);
+            }}
+            type="button"
+          >
+            <UserPlus aria-hidden /> Crear con contraseña
           </button>
           <button className="icon-button" disabled={busy} onClick={() => void load()} title="Actualizar" type="button">
             <RefreshCw aria-hidden />
@@ -230,6 +340,63 @@ export function UsersRolesAdmin({ token, currentUserId }: { token: string; curre
       </div>
 
       {error ? <p className="error-line">{error}</p> : null}
+
+      {pendingInvite ? (
+        <div className="invite-link-panel card">
+          <div className="invite-link-head">
+            <Link2 aria-hidden />
+            <div>
+              <strong>Enlace de activación para {pendingInvite.email}</strong>
+              <small className="muted">
+                El correo automático solo se envía en producción. Comparte este enlace para que fije su contraseña y
+                active su cuenta. Caduca en 7 días.
+              </small>
+            </div>
+            <button className="icon-button" onClick={() => setPendingInvite(null)} title="Cerrar" type="button">
+              <X aria-hidden />
+            </button>
+          </div>
+          <div className="invite-link-row">
+            <input readOnly value={pendingInvite.url} aria-label="Enlace de activación" onFocus={(e) => e.target.select()} />
+            <button className="btn btn--dark" onClick={() => void copyInviteLink()} type="button">
+              {copied ? <Check aria-hidden /> : <Copy aria-hidden />} {copied ? "Copiado" : "Copiar"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {showInvite ? (
+        <form className="rule-form invite-form" onSubmit={inviteUser}>
+          <div className="invite-form-head">
+            <Mail aria-hidden />
+            <p className="muted">
+              El colaborador recibe un enlace para fijar su propia contraseña. Queda como <strong>Invitado</strong> hasta
+              que la active.
+            </p>
+          </div>
+          <label>
+            Nombre
+            <input name="displayName" placeholder="Nombre y apellido" required />
+          </label>
+          <label>
+            Correo
+            <input name="email" type="email" placeholder="correo@ejemplo.com" required />
+          </label>
+          <label>
+            Rol
+            <select name="role" defaultValue="STUDENT">
+              {ALL_ROLES.map((role) => (
+                <option key={role} value={role}>
+                  {roleEs(role)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="btn btn--brand" disabled={busy} type="submit">
+            <Send aria-hidden /> Enviar invitación
+          </button>
+        </form>
+      ) : null}
 
       {showCreate ? (
         <form className="rule-form create-student" onSubmit={createUser}>

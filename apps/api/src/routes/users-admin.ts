@@ -3,7 +3,15 @@ import { hashApplicationPassword } from "@tsc-capacita/wp-compat";
 import type { Prisma, Role } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { logAdminAction } from "../lib/audit.js";
 import { isAdmin, requireAuth } from "../lib/auth.js";
+import type { AppConfig } from "../lib/config.js";
+import {
+  buildActivationUrl,
+  deliverInvitationEmail,
+  generateInvitationToken,
+  INVITATION_TTL_MS
+} from "../lib/invitations.js";
 
 const userIdSchema = z.object({ userId: z.string().min(1) });
 
@@ -36,7 +44,14 @@ const assignRoleSchema = z.object({
   role: z.enum(["ADMIN", "TEACHER", "STUDENT"])
 });
 
-export async function registerUserAdminRoutes(server: FastifyInstance) {
+const inviteUserSchema = z.object({
+  email: z.string().email(),
+  displayName: z.string().min(1),
+  serviceLabel: z.string().min(1).optional(),
+  roles: z.array(z.enum(["ADMIN", "TEACHER", "STUDENT"])).min(1).optional()
+});
+
+export async function registerUserAdminRoutes(server: FastifyInstance, config: AppConfig) {
   // List every user with their roles — the backbone of the roles & permissions admin.
   server.get("/admin/users", async (request, reply) => {
     const auth = await requireAuth(server, request, reply);
@@ -140,7 +155,126 @@ export async function registerUserAdminRoutes(server: FastifyInstance) {
       }
     });
 
+    await logAdminAction({
+      actorId: auth.userId,
+      action: "USER_CREATED",
+      summary: `Creó la cuenta de ${user.displayName} (${user.email})`,
+      targetType: "user",
+      targetId: user.id,
+      metadata: { roles },
+      logger: request.log
+    });
+
     return reply.code(201).send({ user: { ...user, roles: user.roles.map((entry) => entry.role) } });
+  });
+
+  // Invite a user: create the account as INVITED (no password) plus a single-use
+  // activation token, then email the link. In non-production (or without SMTP)
+  // the send is skipped and the activation URL is returned so the admin can hand
+  // it off. This makes the INVITED status reachable for real — no simulation.
+  server.post("/admin/users/invite", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+    if (!isAdmin(auth)) {
+      return reply.code(403).send({ error: "Admin role required" });
+    }
+
+    const body = inviteUserSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: body.error.flatten() });
+    }
+
+    const email = body.data.email.toLowerCase();
+    const roles = dedupeRoles(body.data.roles ?? ["STUDENT"]);
+    const existing = await getPrisma().user.findUnique({ where: { email }, select: { id: true, status: true } });
+
+    // Re-inviting a still-pending account is fine (refresh + new token). An
+    // already-active/suspended account must not be silently re-provisioned.
+    if (existing && existing.status !== "INVITED") {
+      return reply.code(409).send({ error: "Ya existe una cuenta activa con ese correo" });
+    }
+
+    const userSelect = {
+      id: true,
+      email: true,
+      displayName: true,
+      serviceLabel: true,
+      status: true,
+      lastLoginAt: true,
+      createdAt: true,
+      roles: { select: { role: true } }
+    } satisfies Prisma.UserSelect;
+
+    let user;
+    if (existing) {
+      await getPrisma().user.update({
+        where: { id: existing.id },
+        data: {
+          displayName: body.data.displayName,
+          serviceLabel: body.data.serviceLabel ?? null,
+          status: "INVITED"
+        }
+      });
+      for (const role of roles) {
+        await getPrisma().userRole.upsert({
+          where: { userId_role: { userId: existing.id, role } },
+          update: {},
+          create: { userId: existing.id, role }
+        });
+      }
+      user = await getPrisma().user.findUniqueOrThrow({ where: { id: existing.id }, select: userSelect });
+    } else {
+      user = await getPrisma().user.create({
+        data: {
+          email,
+          displayName: body.data.displayName,
+          serviceLabel: body.data.serviceLabel ?? null,
+          status: "INVITED",
+          passwordHash: null,
+          roles: { create: roles.map((role) => ({ role })) }
+        },
+        select: userSelect
+      });
+    }
+
+    // Invalidate any prior unused token, then mint a fresh one.
+    await getPrisma().invitationToken.deleteMany({ where: { userId: user.id, usedAt: null } });
+    const { raw, hash } = generateInvitationToken();
+    const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
+    await getPrisma().invitationToken.create({
+      data: { userId: user.id, tokenHash: hash, expiresAt, createdById: auth.userId }
+    });
+
+    const url = buildActivationUrl(config, raw);
+    const delivery = await deliverInvitationEmail(
+      config,
+      { to: email, displayName: user.displayName, url },
+      request.log
+    );
+
+    await logAdminAction({
+      actorId: auth.userId,
+      action: "USER_INVITED",
+      summary: `Invitó a ${user.displayName} (${user.email})`,
+      targetType: "user",
+      targetId: user.id,
+      metadata: { roles, emailed: delivery.delivered },
+      logger: request.log
+    });
+
+    return reply.code(201).send({
+      user: { ...user, roles: user.roles.map((entry) => entry.role) },
+      invitation: {
+        emailed: delivery.delivered,
+        expiresAt,
+        // Only hand back the raw link when it was NOT emailed (dev / skipped /
+        // failed) so the admin has a fallback; never leak a live token when the
+        // real email already carried it.
+        activationUrl: delivery.delivered ? null : url
+      }
+    });
   });
 
   // Update profile / status (e.g. suspend an account).
@@ -198,6 +332,19 @@ export async function registerUserAdminRoutes(server: FastifyInstance) {
       }
     });
 
+    if (body.data.status !== undefined && body.data.status !== user.status) {
+      const verb = body.data.status === "DISABLED" ? "Suspendió" : body.data.status === "ACTIVE" ? "Reactivó" : "Actualizó";
+      await logAdminAction({
+        actorId: auth.userId,
+        action: "USER_STATUS_CHANGED",
+        summary: `${verb} la cuenta de ${updated.displayName} (${updated.email})`,
+        targetType: "user",
+        targetId: updated.id,
+        metadata: { from: user.status, to: body.data.status },
+        logger: request.log
+      });
+    }
+
     return { user: { ...updated, roles: updated.roles.map((entry) => entry.role) } };
   });
 
@@ -225,11 +372,26 @@ export async function registerUserAdminRoutes(server: FastifyInstance) {
       return reply.code(404).send({ error: "User not found" });
     }
 
+    const alreadyHadRole = await getPrisma().userRole.findUnique({
+      where: { userId_role: { userId: user.id, role: body.data.role } }
+    });
     await getPrisma().userRole.upsert({
       where: { userId_role: { userId: user.id, role: body.data.role } },
       update: {},
       create: { userId: user.id, role: body.data.role }
     });
+
+    if (!alreadyHadRole) {
+      await logAdminAction({
+        actorId: auth.userId,
+        action: "USER_ROLE_GRANTED",
+        summary: `Asignó el rol ${body.data.role} a ${user.displayName} (${user.email})`,
+        targetType: "user",
+        targetId: user.id,
+        metadata: { role: body.data.role },
+        logger: request.log
+      });
+    }
 
     return reply.code(201).send({ roles: await rolesForUser(user.id) });
   });
@@ -267,6 +429,20 @@ export async function registerUserAdminRoutes(server: FastifyInstance) {
 
     await getPrisma().userRole.delete({
       where: { userId_role: { userId: params.data.userId, role: params.data.role } }
+    });
+
+    const target = await getPrisma().user.findUnique({
+      where: { id: params.data.userId },
+      select: { displayName: true, email: true }
+    });
+    await logAdminAction({
+      actorId: auth.userId,
+      action: "USER_ROLE_REVOKED",
+      summary: `Retiró el rol ${params.data.role} de ${target?.displayName ?? "un usuario"}${target?.email ? ` (${target.email})` : ""}`,
+      targetType: "user",
+      targetId: params.data.userId,
+      metadata: { role: params.data.role },
+      logger: request.log
     });
 
     return { roles: await rolesForUser(params.data.userId) };

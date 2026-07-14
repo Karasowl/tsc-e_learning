@@ -33,6 +33,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import DOMPurify from "dompurify";
 import { assetFileUrl, downloadAsset } from "./apiClient";
 import { AuthoringView } from "./authoring";
+import { AdminOpsCenter } from "./opsCenter";
 import { TeacherConsole } from "./teacherConsole";
 import { CompletedCourses, CourseReviews, ProfileView, TeachersDirectory } from "./panels";
 import { UsersRolesAdmin } from "./usersAdmin";
@@ -428,6 +429,11 @@ export default function Home() {
 
   async function loadInitialData(authToken = token) {
     if (!authToken) {
+      return;
+    }
+    // Admins render the self-fetching Ops-Center shell, so Home's data loads
+    // (courses/certificates/report/notifications) would be redundant work.
+    if (user?.roles.includes("ADMIN")) {
       return;
     }
     setBusy(true);
@@ -1079,6 +1085,21 @@ export default function Home() {
         onToggleTheme={toggleTheme}
         onLogout={logout}
         onDisplayName={updateDisplayName}
+      />
+    );
+  }
+
+  // Admin (rol ADMIN) aterriza en el Centro de Operaciones de marca. Espeja la
+  // ramificación de isPureStudent / isPureTeacher; no toca esas cáscaras ni el
+  // app-shell heredado (que queda como respaldo para cuentas sin rol).
+  if (isAdmin && token && user) {
+    return (
+      <AdminOpsCenter
+        token={token}
+        user={user}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onLogout={logout}
       />
     );
   }

@@ -6,8 +6,10 @@ import Fastify from "fastify";
 import type { AppConfig } from "./lib/config.js";
 import { startNotificationWorker } from "./lib/notifications-worker.js";
 import { registerAccountRoutes } from "./routes/account.js";
+import { registerAdminOverviewRoutes } from "./routes/admin-overview.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerInvitationRoutes } from "./routes/invitations.js";
 import { registerCertificateRoutes } from "./routes/certificates.js";
 import { registerCourseAdminRoutes } from "./routes/courses-admin.js";
 import { registerCourseRoutes } from "./routes/courses.js";
@@ -81,6 +83,7 @@ export async function buildServer(config: AppConfig) {
   });
 
   await registerAccountRoutes(server);
+  await registerAdminOverviewRoutes(server);
   await registerAssetRoutes(server, config);
   await registerAuthRoutes(server, config);
   await registerCertificateRoutes(server, config);
@@ -91,12 +94,13 @@ export async function buildServer(config: AppConfig) {
   await registerGamificationRoutes(server);
   await registerHealthRoutes(server);
   await registerInventoryRoutes(server);
+  await registerInvitationRoutes(server);
   await registerNotificationRoutes(server, config);
   await registerQuizAdminRoutes(server);
   await registerQuizRoutes(server);
   await registerReportRoutes(server);
   await registerReviewRoutes(server);
-  await registerUserAdminRoutes(server);
+  await registerUserAdminRoutes(server, config);
 
   const notificationWorker = startNotificationWorker(config, server.log);
   server.addHook("onClose", async () => {

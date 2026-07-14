@@ -118,8 +118,42 @@ model User {
   achievementAwards  AchievementAward[]
   achievementEvents  AchievementEvent[]
   courseReviews      CourseReview[]
+  invitationTokens   InvitationToken[]
+  auditEvents        AuditEvent[]      @relation("AuditActor")
 
   @@unique([sourceSystem, sourceId])
+}
+
+// A single-use, expiring token that lets an INVITED user set their own password
+// and activate their account. The raw token is delivered by email (or shown to
+// the admin in dev); only its SHA-256 hash is persisted here.
+model InvitationToken {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Append-only audit trail of privileged admin actions (create/invite/suspend
+// user, grant/revoke role, enroll/revoke access). Powers the "Bitácora" view.
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  targetType String?
+  targetId   String?
+  summary    String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
 }
 
 model UserRole {

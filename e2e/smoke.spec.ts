@@ -44,6 +44,8 @@ async function waitForApi(request: APIRequestContext) {
   throw new Error(`El API en ${API_URL} no respondio a tiempo.`);
 }
 
+// Ambos llamadores usan admin@tsc.local, que ahora aterriza en la cáscara de
+// marca del Centro de Operaciones (ops-shell), no en el app-shell heredado.
 async function login(page: Page, email: string) {
   await waitForApi(page.request);
   await page.goto("/");
@@ -51,8 +53,8 @@ async function login(page: Page, email: string) {
   await page.getByLabel("Correo").fill(email);
   await page.getByLabel("Contraseña").fill(PASSWORD);
   await page.getByRole("button", { name: "Ingresar" }).click();
-  // El shell logueado reemplaza a la pantalla de login.
-  await expect(page.locator("main.app-shell")).toBeVisible({ timeout: 30_000 });
+  // El Centro de Operaciones reemplaza a la pantalla de login para el admin.
+  await expect(page.locator("main.ops-shell")).toBeVisible({ timeout: 30_000 });
 }
 
 function parseRgb(value: string): [number, number, number] {
@@ -117,12 +119,11 @@ test.describe("privilegiados (desktop 1280x800)", () => {
     await page.screenshot({ path: shot("instructor-consola.png"), fullPage: true });
   });
 
-  test("admin: usuarios y roles + reporte", async ({ page }) => {
+  test("admin: colaboradores + reporte en el Centro de Operaciones", async ({ page }) => {
     await login(page, USERS.admin);
-    // Admin aterriza en "Gestionar cursos"; navegamos a Usuarios y roles.
-    await page.getByRole("button", { name: "Usuarios y roles" }).click();
-    // El topbar (h1) y el panel (h2) comparten el mismo texto; fijamos el h1.
-    await expect(page.getByRole("heading", { name: "Usuarios y roles", level: 1 })).toBeVisible({
+    // Admin aterriza en el Tablero; navegamos por el sidebar de secciones.
+    await page.locator(".ops-nav-item", { hasText: "Colaboradores" }).click();
+    await expect(page.getByRole("heading", { name: "Colaboradores y roles" })).toBeVisible({
       timeout: 30_000
     });
     // Espera a que la tabla de usuarios tenga filas reales.
@@ -131,11 +132,11 @@ test.describe("privilegiados (desktop 1280x800)", () => {
     });
     await page.screenshot({ path: shot("admin-usuarios.png"), fullPage: true });
 
-    // Reporte de colaboradores (si hay datos).
-    await page.getByRole("button", { name: "Reporte" }).click();
-    await expect(
-      page.getByRole("heading", { name: "Reporte de colaboradores", level: 1 })
-    ).toBeVisible({ timeout: 20_000 });
+    // Reporte de colaboradores (reutiliza el reporte real).
+    await page.locator(".ops-nav-item", { hasText: "Reportes" }).click();
+    await expect(page.getByRole("heading", { name: "Reporte de colaboradores" })).toBeVisible({
+      timeout: 20_000
+    });
     await page.screenshot({ path: shot("admin-reporte.png"), fullPage: true });
   });
 });
@@ -145,9 +146,8 @@ test.describe("toggle de tema (desktop)", () => {
 
   test("cambiar a claro (papel) y volver a oscuro", async ({ page }) => {
     await login(page, USERS.admin);
-    // Landing de un privilegiado: el titulo del topbar es "Gestionar cursos"
-    // (rol-agnostico; el admin ve "Todos los cursos" como h2, el teacher "Mis cursos").
-    await expect(page.getByRole("heading", { name: "Gestionar cursos", level: 1 })).toBeVisible({
+    // Landing del admin: el Tablero del Centro de Operaciones.
+    await expect(page.getByRole("heading", { name: "Estado de la plataforma" })).toBeVisible({
       timeout: 30_000
     });
 
