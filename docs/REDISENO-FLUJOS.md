@@ -203,4 +203,34 @@ Modal/Wizard ──► Nuevo curso / Publicar / Asignar / Exportar / Invitar
 9. **Invitación por correo:** ¿se quiere flujo real de invitación (token + activación pública), o basta crear cuentas activas con contraseña fijada por admin? *(Define si la "simulación" se corrige o se documenta como diseño.)*
 10. **Racha (streak):** ¿se calcula en servidor (requiere `lastActiveDate`/`currentStreak`) o se omite del MVP?
 11. **Reordenamiento en builder:** el backend ya soporta `reorderModule/reorderLesson`. ¿Drag-and-drop o flechas?
-12. **Migración de la rama rebrand:** ¿se acepta el cherry-pick de tokens+fuentes (descartando su dirección de tema), o se prefiere fusionarla y corregir encima?
+12. **Migración de la rama rebrand:** ¿se acepta el cherry-pick de tokens+fuentes (descartando su dirección de tema), o se prefiere fusionarla y corregir encima? → RESUELTO: se hizo cherry-pick de valores + inversión a dark-first (no se fusionó la rama vieja).
+
+---
+
+## 7. Estado de implementación (noche del 2026-07-14)
+
+Rama `redesign/dark-first-flows`: 11 commits sobre `main`, 61 archivos, +10160/-191. **Sin push, sin deploy** (el VPS está compartido con producción y no se tocó). Todo verificado en local.
+
+### Construido y verificado
+- **Fase 0 dark-first**: tokens escala ink + rojo `#A82431`, fuentes Saira/Hanken/Plex, tema invertido (oscuro por defecto, claro como variante), biblioteca de componentes al spec, iconos Lucide. Arreglado un bug de contraste (botones con texto invisible en oscuro).
+- **Estudiante (guardia)**: app móvil "carrera del guardia" real. Cáscara móvil (barra de identidad + tabbar inferior de 4), tabs Rango/Cursos/Logros/Perfil, gamificación real (XP/rangos/insignias sobre el motor existente, endpoints `/me/progress` y `/me/badges`), toasts de XP y ascenso. Sobre el LMS real (login, catálogo, lecciones, examen calificado en servidor, diploma).
+- **Instructor**: consola de marca (topbar + navtabs, sin sidebar). Conteos reales (arreglado "0 secciones", era mismatch `counts` vs `_count`). Versionado de curso (sube al publicar). Sello de evaluación inmutable (el histórico se califica contra la regla congelada del intento).
+- **Admin**: Centro de Operaciones (sidebar por secciones + topbar EN VIVO/reloj/campana/buscador). Tablero con KPIs reales (`/admin/overview`). Invitación real (arreglada la única simulación: `INVITED` + token + activación pública). Bitácora de auditoría (`AuditEvent`).
+- **PWA** instalable (manifest + service worker + iconos de marca, favicon arreglado) + guía `docs/PLAY_STORE.md`.
+- **Infra**: entorno local (Postgres nativo :5433), seed idempotente (`pnpm db:seed`), E2E Playwright (`pnpm e2e`).
+
+Verificación: **40 tests de API verde**, **e2e 10/10 verde** sobre el commit final, build web+api verde, QA visual por captura de las pantallas clave de cada rol.
+
+### Decisiones autónomas tomadas (delegadas por el usuario "cualquier decisión que dependa de mí, tómala tú")
+Gamificación real; versionado + sello P1; XP +10 lección / +240 diploma; `employeeCode` añadido al esquema; líneas de servicio = chips del diseño; reordenar con flechas Lucide; App Router diferido (no necesario para empaquetar); sitio corporativo fuera de alcance; instalado Postgres nativo para dev (no había Docker, reversible).
+
+### Pendientes menores (no bloquean uso)
+Video de "Seguridad Intramuros" con id de YouTube ficticio en el seed; celebración de ascenso sin test que cruce umbral; tab "Anuncios" del instructor es placeholder (no hay backend); reporte del admin en Ops es versión lean; docs descriptivos (OPERATIONS/API_RUNTIME) sin actualizar (se hará al cutover); instalabilidad PWA verificada por assets/criterios, no por Lighthouse.
+
+### Cómo probarlo en local
+BD: `bash ~/.local/share/tsc-capacita-localpg-start.sh` (Postgres :5433). App: `pnpm dev` (web :3000, api :4000). Login: `guardia@tsc.local` / `instructor@tsc.local` / `admin@tsc.local`, password `Capacita2026!`. Pruebas: `pnpm e2e`. Re-sembrar: `pnpm db:seed`.
+
+### Siguientes pasos (requieren decisión/credenciales del usuario)
+1. Revisar la rama (local, o desplegando un preview NO-prod).
+2. Deploy/cutover a producción con su visto bueno (no se tocó prod para proteger a los usuarios vivos).
+3. Play Store: desplegar el origen HTTPS, luego TWA/Bubblewrap con su keystore + Play Console (ver `docs/PLAY_STORE.md`; la máquina ya tiene Android SDK + JDK).
