@@ -3012,3 +3012,478 @@ label textarea {
 .inp::placeholder { color: var(--fg-3); }
 .inp:focus-visible { outline: none; border-color: var(--tsc-red); box-shadow: var(--focus-ring); }
 textarea.inp { min-height: 96px; padding: 10px 12px; line-height: var(--lh-normal); }
+
+/* ============================================================================
+   CÁSCARA MÓVIL DEL GUARDIA — "carrera del guardia" (rol STUDENT puro).
+   Lienzo ink, mobile-first, columna centrada (max 430px). Tabbar inferior fija.
+   ============================================================================ */
+.guard-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 430px;
+  margin: 0 auto;
+  background: var(--ink-700);
+  color: var(--fg-1);
+}
+
+/* ─── Barra superior de identidad ─────────────────────────────────────────── */
+.guard-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: grid;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-4) var(--s-3);
+  background: color-mix(in srgb, var(--ink-800) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line-1);
+}
+.guard-topbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+.guard-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.shield-mark {
+  display: block;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 2px 6px rgba(168, 36, 49, 0.35));
+}
+.guard-wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-strong);
+  line-height: 1;
+}
+.guard-rankchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-red);
+  background: rgba(168, 36, 49, 0.14);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-xs);
+  letter-spacing: var(--track-mono);
+  color: var(--fg-strong);
+  white-space: nowrap;
+}
+.guard-rankchip svg { width: 15px; height: 15px; color: var(--tsc-red-on-dark); }
+.guard-rankchip-name { font-weight: 600; text-transform: uppercase; }
+.guard-rankchip-xp { color: var(--fg-2); }
+.guard-identity { display: grid; gap: 3px; }
+.guard-eyebrow {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--fs-eyebrow);
+  font-weight: 700;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--tsc-red-on-dark);
+}
+.guard-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1.02;
+  color: var(--fg-strong);
+}
+
+/* ─── Área desplazable ────────────────────────────────────────────────────── */
+.guard-scroll {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-4) 104px;
+}
+.guard-scroll .error-banner { margin: 0; }
+.guard-empty {
+  padding: var(--s-8) var(--s-4);
+  text-align: center;
+  color: var(--fg-3);
+  font-size: var(--fs-body-sm);
+}
+.guard-block-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  justify-content: space-between;
+}
+.guard-block-head h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-h6);
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  color: var(--fg-strong);
+}
+.guard-block-head > svg { width: 20px; height: 20px; color: var(--tsc-red-on-dark); }
+.guard-block-head svg + h3 { margin-right: auto; }
+
+/* ─── Barra de avance (mono) ──────────────────────────────────────────────── */
+.guard-progress {
+  position: relative;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+.guard-progress > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--tsc-red), var(--tsc-red-bright));
+}
+
+/* ─── Tabbar inferior fija ────────────────────────────────────────────────── */
+.guard-tabbar {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: 100%;
+  max-width: 430px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-items: end;
+  padding: 10px 8px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--ink-900) 94%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line-2);
+}
+.guard-tab {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 6px 2px;
+  background: transparent;
+  border: 0;
+  color: var(--fg-3);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: color var(--t-fast) var(--ease-out);
+}
+.guard-tab svg { width: 22px; height: 22px; }
+.guard-tab.active { color: var(--tsc-red-on-dark); }
+.guard-tab.active svg { color: var(--tsc-red-on-dark); }
+.guard-home-indicator {
+  position: absolute;
+  left: 50%;
+  bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: 128px;
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+
+/* ─── Tab RANGO (hub) ─────────────────────────────────────────────────────── */
+.rank-tab { display: flex; flex-direction: column; gap: var(--s-4); }
+.rank-hero {
+  padding: var(--s-6) var(--s-5);
+  display: grid;
+  gap: var(--s-2);
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(168, 36, 49, 0.22), transparent 60%),
+    var(--ink-600);
+  border-color: var(--line-red);
+}
+.rank-hero .mono-label { color: var(--fg-2); }
+.rank-name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--fs-h4);
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--fg-strong);
+}
+.rank-xp {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: var(--s-1) 0 var(--s-2);
+}
+.rank-xp strong {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 46px;
+  line-height: 1;
+  color: var(--fg-strong);
+}
+.rank-progress-block { display: grid; gap: 8px; }
+.rank-progress-meta { margin: 0; color: var(--fg-2); }
+
+.mission-card {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-5);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+.mission-card:hover { border-color: var(--line-red); }
+.mission-head { display: inline-flex; align-items: center; gap: 8px; }
+.mission-head svg { width: 16px; height: 16px; color: var(--tsc-red-on-dark); }
+.mission-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-h6);
+  line-height: 1.1;
+  color: var(--fg-strong);
+}
+.mission-progress { display: flex; align-items: center; gap: 10px; }
+.mission-progress .guard-progress { flex: 1; }
+.mission-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--s-1);
+  font-weight: 700;
+  font-size: var(--fs-body-sm);
+  color: var(--tsc-red-on-dark);
+}
+.mission-go svg { width: 16px; height: 16px; }
+.mission-empty .mission-title { color: var(--fg-1); }
+
+.rank-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s-2);
+}
+.rank-metric {
+  display: grid;
+  gap: 2px;
+  padding: var(--s-4);
+  border-radius: var(--r-lg);
+  background: var(--ink-600);
+  border: 1px solid var(--line-1);
+}
+.rank-metric strong {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--fg-strong);
+}
+.rank-metric .mono-label { color: var(--fg-3); }
+
+/* ─── Tab LOGROS (escalafón + insignias) ──────────────────────────────────── */
+.ach-tab { display: flex; flex-direction: column; gap: var(--s-4); }
+.ladder-card { padding: var(--s-5); display: grid; gap: var(--s-3); }
+.rank-ladder { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ladder-step {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-1);
+  background: var(--ink-700);
+}
+.ladder-step .ladder-level { color: var(--fg-3); }
+.ladder-name { font-weight: 600; color: var(--fg-1); }
+.ladder-floor { color: var(--fg-3); text-align: right; }
+.ladder-check { width: 18px; height: 18px; color: var(--ok); }
+.ladder-lock { width: 16px; height: 16px; color: var(--fg-3); }
+.ladder-tag { padding-block: 3px; }
+.ladder-step.current {
+  border-color: var(--tsc-red);
+  background: rgba(168, 36, 49, 0.16);
+}
+.ladder-step.current .ladder-name,
+.ladder-step.current .ladder-level { color: var(--fg-strong); }
+.ladder-step.passed { opacity: 0.9; }
+.ladder-step.locked { opacity: 0.55; }
+
+.badges-head { margin-top: var(--s-1); }
+.badges-head .mono-label { color: var(--fg-2); }
+.badge-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s-3);
+}
+.badge-card {
+  display: grid;
+  gap: 6px;
+  padding: var(--s-4);
+  align-content: start;
+}
+.badge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line-1);
+}
+.badge-icon svg { width: 20px; height: 20px; color: var(--fg-3); }
+.badge-card.earned .badge-icon {
+  background: rgba(168, 36, 49, 0.16);
+  border-color: var(--line-red);
+}
+.badge-card.earned .badge-icon svg { color: var(--tsc-red-on-dark); }
+.badge-title { font-weight: 700; font-size: var(--fs-body-sm); color: var(--fg-strong); }
+.badge-desc { margin: 0; font-size: var(--fs-caption); color: var(--fg-2); line-height: 1.35; }
+.badge-points {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  color: var(--fg-3);
+}
+.badge-check { width: 14px; height: 14px; color: var(--ok); }
+.badge-card.locked { opacity: 0.62; }
+.badge-card.locked .badge-title { color: var(--fg-2); }
+
+/* ─── Celebración de ascenso ──────────────────────────────────────────────── */
+.ascend-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: var(--s-6);
+  background: rgba(9, 15, 18, 0.82);
+  backdrop-filter: blur(4px);
+  animation: guard-fade var(--t-fast) var(--ease-out);
+}
+.ascend-card {
+  width: min(360px, 92vw);
+  display: grid;
+  justify-items: center;
+  gap: var(--s-2);
+  padding: var(--s-8) var(--s-6);
+  text-align: center;
+  border-radius: var(--r-xl);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(168, 36, 49, 0.32), transparent 62%),
+    var(--ink-600);
+  border: 1px solid var(--line-red);
+  box-shadow: var(--shadow-3), var(--shadow-red);
+  animation: guard-pop 320ms var(--ease-out);
+}
+.ascend-mark { animation: guard-badge-in 480ms var(--ease-out); }
+.ascend-rank {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--fs-h3);
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--fg-strong);
+}
+.ascend-copy { margin: 0; color: var(--fg-2); font-size: var(--fs-body-sm); }
+.ascend-cta { margin-top: var(--s-3); }
+
+@keyframes guard-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes guard-pop { from { opacity: 0; transform: translateY(14px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes guard-badge-in { 0% { transform: scale(0.4) rotate(-12deg); opacity: 0; } 60% { transform: scale(1.12) rotate(3deg); } 100% { transform: none; opacity: 1; } }
+
+/* ─── Tab CURSOS (catálogo/detalle móvil, reutiliza el motor real) ────────── */
+.guard-catalog { display: flex; flex-direction: column; gap: var(--s-4); }
+.guard-catalog .catalog-toolbar { margin: 0; }
+.guard-catalog .search-field { max-width: none; flex: 1 1 100%; }
+.guard-course-list { display: grid; gap: var(--s-3); }
+.guard-course-card {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  text-align: left;
+  border-radius: var(--r-lg);
+  background: var(--ink-600);
+  border: 1px solid var(--line-1);
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+.guard-course-card:hover { border-color: var(--line-red); }
+.guard-course-card .course-card-cover {
+  width: 92px;
+  height: 92px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.guard-course-card .course-card-cover img { width: 100%; height: 100%; object-fit: cover; }
+.guard-course-card-body { display: grid; gap: 5px; align-content: start; min-width: 0; }
+.guard-course-card-body strong {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-body);
+  line-height: 1.12;
+  color: var(--fg-strong);
+}
+.guard-course-card-body .pill { justify-self: start; }
+.guard-course-progress { margin-top: 3px; }
+
+.guard-course-detail { display: flex; flex-direction: column; gap: var(--s-4); }
+.guard-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 8px 4px;
+  background: transparent;
+  border: 0;
+  color: var(--fg-2);
+  font-weight: 600;
+  font-size: var(--fs-body-sm);
+}
+.guard-back svg { width: 18px; height: 18px; }
+.guard-course-head { display: grid; gap: var(--s-2); }
+.guard-course-head h2 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--fs-h5);
+  line-height: 1.03;
+  text-transform: uppercase;
+  color: var(--fg-strong);
+}
+.guard-course-progress-row,
+.guard-course-head .guard-course-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.guard-course-head .guard-progress { flex: 1; }
+.guard-course-head .mono-label { color: var(--fg-2); }
+.guard-curriculum { display: grid; gap: var(--s-3); }
+.guard-lesson-panel { display: block; }
+.guard-claim { width: 100%; }
+
+/* Chip de rango reusado en el perfil (ProfileView gamificado). */
+.guard-rank-pill {
+  margin: 8px 0 4px;
+  border-color: var(--line-red);
+  background: rgba(168, 36, 49, 0.14);
+  color: var(--fg-strong);
+}
+.guard-rank-pill svg { width: 15px; height: 15px; color: var(--tsc-red-on-dark); }
+.guard-logout { margin-top: var(--s-4); }
+
+/* El perfil reutilizado (ProfileView) a ancho completo dentro de la cáscara. */
+.guard-shell .profile-view { display: grid; gap: var(--s-4); }
+.guard-shell .data-section { padding: var(--s-5); }
+.guard-shell dd.mono { font-family: var(--font-mono); letter-spacing: var(--track-mono); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ascend-overlay,
+  .ascend-card,
+  .ascend-mark { animation: none; }
+}

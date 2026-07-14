@@ -36,6 +36,17 @@ import { AuthoringView } from "./authoring";
 import { CompletedCourses, CourseReviews, ProfileView, TeachersDirectory } from "./panels";
 import { UsersRolesAdmin } from "./usersAdmin";
 import { CardSkeletonGrid, toast } from "./ui";
+import {
+  AchievementsTab,
+  AscendOverlay,
+  GuardTabBar,
+  GuardTopBar,
+  RankTab,
+  type BadgesPayload,
+  type GuardIdentity,
+  type GuardTab,
+  type MeProgress
+} from "./guardApp";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
@@ -203,6 +214,9 @@ type AnswerState = Record<
 
 type View = "courses" | "manage" | "report" | "certificates" | "notifications" | "teachers" | "completed" | "users" | "profile";
 
+// Bloque de gamificación que devuelven /lessons/:id/complete y /certificates/issue.
+type Gamification = { xpDelta: number; xpTotal: number; ascended: boolean; rankName: string };
+
 type ReportSortKey = "studentName" | "serviceLabel" | "courseTitle" | "progressPercent" | "status" | "scorePercent";
 
 const REPORT_PAGE_SIZE = 25;
@@ -226,6 +240,12 @@ export default function Home() {
   const [navOpen, setNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("dark");
+  // Gamificación de la cáscara del guardia (solo STUDENT puro).
+  const [progress, setProgress] = useState<MeProgress | null>(null);
+  const [badges, setBadges] = useState<BadgesPayload | null>(null);
+  const [identity, setIdentity] = useState<GuardIdentity | null>(null);
+  const [guardTab, setGuardTab] = useState<GuardTab>("rank");
+  const [ascend, setAscend] = useState<string | null>(null);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogFilter, setCatalogFilter] = useState<"all" | "in-progress" | "not-started" | "completed">("all");
   // Ids de cursos cuya portada migrada no cargó: caemos al placeholder de marca.
@@ -247,6 +267,14 @@ export default function Home() {
 
   const isPrivileged = user?.roles.includes("ADMIN") || user?.roles.includes("TEACHER");
   const isAdmin = user?.roles.includes("ADMIN");
+  // Estudiante "puro": solo STUDENT (sin TEACHER/ADMIN). Recibe la cáscara móvil
+  // del guardia. Cualquier usuario con rol privilegiado conserva el shell actual
+  // intacto, aunque también esté inscrito como estudiante.
+  const isPureStudent = Boolean(
+    user?.roles.includes("STUDENT") &&
+      !user?.roles.includes("TEACHER") &&
+      !user?.roles.includes("ADMIN")
+  );
   // The learner view ("Cursos inscritos" / "Aprobados") is for students. An ADMIN
   // never sees it (they run the platform); but a TEACHER who is also enrolled as a
   // student still gets it, so multi-role users aren't locked out of their courses.
@@ -401,6 +429,9 @@ export default function Home() {
       const coursePayload = await api<{ courses: CourseSummary[] }>("/courses");
       setCourses(coursePayload.courses);
       await loadCertificates();
+      if (isPureStudent) {
+        await loadGamification();
+      }
       if (isPrivileged) {
         await loadReport();
       }
@@ -487,6 +518,41 @@ export default function Home() {
     setCertificates(payload.certificates);
   }
 
+  async function loadProgress() {
+    const payload = await api<MeProgress>("/me/progress");
+    setProgress(payload);
+  }
+
+  async function loadGamification() {
+    // Identidad (employeeCode/serviceLabel), XP/rango y catálogo de insignias.
+    const [me, prog, badgePayload] = await Promise.all([
+      api<{ user: GuardIdentity }>("/me"),
+      api<MeProgress>("/me/progress"),
+      api<BadgesPayload>("/me/badges")
+    ]);
+    setIdentity(me.user);
+    setProgress(prog);
+    setBadges(badgePayload);
+  }
+
+  // Aplica el bloque de gamificación de una respuesta (toast de XP + ascenso) y
+  // refresca el progreso. Solo para el estudiante puro (cáscara del guardia).
+  async function applyGamification(gamification?: Gamification) {
+    if (!isPureStudent) {
+      return;
+    }
+    await loadProgress().catch(() => undefined);
+    await api<BadgesPayload>("/me/badges")
+      .then(setBadges)
+      .catch(() => undefined);
+    if (gamification && gamification.xpDelta > 0) {
+      toast.success(`+${gamification.xpDelta} XP`);
+    }
+    if (gamification?.ascended) {
+      setAscend(gamification.rankName);
+    }
+  }
+
   async function loadReport() {
     const payload = await api<{ summary: Record<string, number>; rows: ReportRow[] }>("/reports/students");
     setReportSummary(payload.summary);
@@ -506,11 +572,15 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      await api(`/lessons/${lessonId}/complete`, { method: "POST", body: "{}" });
+      const result = await api<{ gamification?: Gamification }>(`/lessons/${lessonId}/complete`, {
+        method: "POST",
+        body: "{}"
+      });
       if (selectedCourse) {
         await loadCourse(selectedCourse.id);
       }
       await loadCertificates();
+      await applyGamification(result.gamification);
     } catch (completeError) {
       setError(errorMessage(completeError));
     } finally {
@@ -591,12 +661,18 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      await api("/certificates/issue", {
+      const result = await api<{ gamification?: Gamification }>("/certificates/issue", {
         method: "POST",
         body: JSON.stringify({ courseId })
       });
       await loadCertificates();
-      setView("certificates");
+      if (isPureStudent) {
+        // El guardia se queda en el curso; el toast confirma el diploma + XP.
+        toast.success("Diploma reclamado");
+        await applyGamification(result.gamification);
+      } else {
+        setView("certificates");
+      }
     } catch (certificateError) {
       setError(errorMessage(certificateError));
     } finally {
@@ -763,6 +839,228 @@ export default function Home() {
     setCourses([]);
     setCertificates([]);
     setReportRows([]);
+    setProgress(null);
+    setBadges(null);
+    setIdentity(null);
+    setGuardTab("rank");
+  }
+
+  // Tab "Cursos" de la cáscara del guardia: reutiliza el catálogo real, el
+  // detalle del curso, el reproductor de lección y el MOTOR DE EXAMEN existentes
+  // (LessonPanel / QuizPanel). Solo cambia el envoltorio de presentación móvil.
+  function renderCoursesTab() {
+    if (!token) {
+      return null;
+    }
+    if (selectedCourse) {
+      return (
+        <section className="guard-course-detail">
+          <button className="guard-back" onClick={() => setSelectedCourse(null)} type="button">
+            <ArrowLeft aria-hidden /> Volver a cursos
+          </button>
+          <div className="guard-course-head">
+            <p className="eyebrow">{selectedCourse.teacher?.displayName ?? "TSC Capacitación"}</p>
+            <h2>{selectedCourse.title}</h2>
+            <div className="guard-course-progress">
+              <ProgressBar value={selectedCourse.enrollment?.progressPercent ?? 0} />
+              <span className="mono-label">{Math.round(selectedCourse.enrollment?.progressPercent ?? 0)}%</span>
+            </div>
+          </div>
+
+          <div className="guard-curriculum">
+            {selectedCourse.modules.map((module) => (
+              <div className="module-block" key={module.id}>
+                <h3>{module.title}</h3>
+                {module.lessons.map((lesson) => (
+                  <button
+                    className={`lesson-row ${activeLessonId === lesson.id ? "active" : ""}`}
+                    key={lesson.id}
+                    onClick={() => {
+                      setQuizAttempt(null);
+                      setActiveLessonId(lesson.id);
+                    }}
+                    type="button"
+                  >
+                    {lesson.completed ? <Check aria-hidden /> : <Play aria-hidden />}
+                    <span>{lesson.title}</span>
+                  </button>
+                ))}
+                {module.quizzes.map((quiz) => (
+                  <button className="quiz-row" key={quiz.id} onClick={() => startQuiz(quiz.id)} type="button">
+                    <Clock aria-hidden />
+                    <span>{quiz.title}</span>
+                    <small>{quiz.timeLimitSec ? `${Math.round(quiz.timeLimitSec / 60)} min` : "Sin tiempo"}</small>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          <div className="guard-lesson-panel">
+            {quizAttempt ? (
+              <QuizPanel
+                answers={answers}
+                attempt={quizAttempt}
+                busy={busy}
+                onAnswerChange={setAnswers}
+                onClose={() => setQuizAttempt(null)}
+                onSubmit={submitQuiz}
+                onRetry={startQuiz}
+              />
+            ) : activeLesson ? (
+              <LessonPanel
+                lesson={activeLesson}
+                token={token}
+                onComplete={completeLesson}
+                onPrev={() => goToLesson(-1)}
+                onNext={() => goToLesson(1)}
+                hasPrev={activeLessonIndex > 0}
+                hasNext={activeLessonIndex >= 0 && activeLessonIndex < flatLessons.length - 1}
+              />
+            ) : (
+              <p className="empty-state">Selecciona una lección.</p>
+            )}
+          </div>
+
+          {selectedCourse.enrollment?.status === "COMPLETED" ? (
+            <button
+              className="btn btn--brand guard-claim"
+              disabled={busy}
+              onClick={() => issueCertificate(selectedCourse.id)}
+              type="button"
+            >
+              <Award aria-hidden />
+              Reclamar diploma
+            </button>
+          ) : (selectedCourse.enrollment?.progressPercent ?? 0) >= 100 ? (
+            <p className="empty-state">Aprueba el examen del curso para obtener tu diploma.</p>
+          ) : null}
+
+          <CourseReviews token={token} courseId={selectedCourse.id} />
+        </section>
+      );
+    }
+    return (
+      <section className="guard-catalog">
+        <div className="guard-block-head">
+          <h3>Tus cursos</h3>
+          <button className="icon-button" disabled={busy} onClick={() => loadInitialData()} title="Actualizar" type="button">
+            <RefreshCw aria-hidden />
+          </button>
+        </div>
+        {courses.length > 0 ? (
+          <div className="catalog-toolbar">
+            <div className="search-field">
+              <Search aria-hidden />
+              <input
+                type="search"
+                placeholder="Buscar curso…"
+                value={catalogQuery}
+                onChange={(event) => setCatalogQuery(event.target.value)}
+                aria-label="Buscar curso"
+              />
+            </div>
+            <div className="filter-chips" role="group" aria-label="Filtrar cursos">
+              {([
+                { key: "all", label: "Todos" },
+                { key: "in-progress", label: "En curso" },
+                { key: "not-started", label: "Sin iniciar" },
+                { key: "completed", label: "Aprobados" }
+              ] as const).map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  className={`filter-chip ${catalogFilter === option.key ? "active" : ""}`}
+                  onClick={() => setCatalogFilter(option.key)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {busy && courses.length === 0 ? (
+          <CardSkeletonGrid count={4} />
+        ) : courses.length === 0 ? (
+          <p className="empty-state">Aún no tienes cursos asignados. Pídele acceso a tu administrador.</p>
+        ) : visibleCourses.length === 0 ? (
+          <p className="empty-state">No hay cursos que coincidan con tu búsqueda.</p>
+        ) : (
+          <div className="guard-course-list">
+            {visibleCourses.map((course) => {
+              const percent = Math.round(course.progressPercent ?? 0);
+              const tag =
+                percent >= 100
+                  ? { label: "APROBADO", cls: "pill--ok" }
+                  : percent > 0
+                    ? { label: `EN CURSO · ${percent}%`, cls: "pill--watch" }
+                    : { label: "SIN INICIAR", cls: "" };
+              return (
+                <button
+                  className="guard-course-card"
+                  key={course.id}
+                  onClick={() => loadCourse(course.id)}
+                  type="button"
+                  aria-label={`Abrir curso ${course.title}`}
+                >
+                  <CourseCover
+                    thumbnail={course.thumbnail}
+                    title={course.title}
+                    failed={coverFailed.has(course.id)}
+                    onFailed={() => markCoverFailed(course.id)}
+                    variant="card"
+                  />
+                  <div className="guard-course-card-body">
+                    <span className={`pill ${tag.cls}`}>{tag.label}</span>
+                    <strong>{course.title}</strong>
+                    <small className="mono-label">
+                      {course.counts.lessons} lecciones · {course.counts.quizzes} exámenes
+                    </small>
+                    <div className="guard-course-progress">
+                      <ProgressBar value={course.progressPercent ?? 0} />
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  if (isPureStudent && token && user) {
+    return (
+      <main className="guard-shell">
+        <GuardTopBar user={user} identity={identity} progress={progress} />
+        <div className="guard-scroll">
+          {error ? <div className="error-banner">{error}</div> : null}
+          {guardTab === "rank" ? (
+            <RankTab
+              progress={progress}
+              continueCourse={continueCourse}
+              onContinue={(courseId) => {
+                setGuardTab("courses");
+                void loadCourse(courseId);
+              }}
+              onGoCourses={() => setGuardTab("courses")}
+            />
+          ) : null}
+          {guardTab === "courses" ? renderCoursesTab() : null}
+          {guardTab === "achievements" ? <AchievementsTab badges={badges} progress={progress} /> : null}
+          {guardTab === "profile" ? (
+            <ProfileView
+              token={token}
+              onProfileUpdated={updateDisplayName}
+              rank={progress ? { name: progress.rank.name, level: progress.rank.level, xp: progress.xp } : null}
+              onLogout={logout}
+            />
+          ) : null}
+        </div>
+        <GuardTabBar active={guardTab} onChange={setGuardTab} />
+        <AscendOverlay rankName={ascend} onDismiss={() => setAscend(null)} />
+      </main>
+    );
   }
 
   if (!token || !user) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Award, GraduationCap, Save, Star, UserRound } from "lucide-react";
+import { Award, GraduationCap, LogOut, Save, ShieldCheck, Star, UserRound } from "lucide-react";
 import { authFetch, errorText } from "./apiClient";
 import { toast } from "./ui";
 
@@ -251,6 +251,7 @@ type MeProfile = {
   email: string;
   displayName: string;
   serviceLabel: string | null;
+  employeeCode: string | null;
   status: string;
   roles: string[];
   lastLoginAt: string | null;
@@ -280,10 +281,17 @@ function profileInitials(name: string) {
 
 export function ProfileView({
   token,
-  onProfileUpdated
+  onProfileUpdated,
+  rank,
+  onLogout
 }: {
   token: string;
   onProfileUpdated: (displayName: string) => void;
+  // Cuando se provee (cáscara del guardia), el perfil se muestra gamificado:
+  // chip de rango+XP y botón de salir. El shell privilegiado no los pasa y
+  // conserva su perfil idéntico.
+  rank?: { name: string; level: number; xp: number } | null;
+  onLogout?: () => void;
 }) {
   const [me, setMe] = useState<MeProfile | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -388,6 +396,11 @@ export function ProfileView({
           <div>
             <h2>{me.displayName}</h2>
             <p className="muted">{me.email}</p>
+            {rank ? (
+              <span className="pill guard-rank-pill">
+                <ShieldCheck aria-hidden /> {rank.name} · {rank.xp.toLocaleString("es-MX")} XP
+              </span>
+            ) : null}
             <div className="role-chips">
               {me.roles.map((role) => (
                 <span className="role-chip" key={role}>
@@ -398,6 +411,12 @@ export function ProfileView({
           </div>
         </div>
         <dl className="profile-meta">
+          {me.employeeCode ? (
+            <div>
+              <dt>Código de colaborador</dt>
+              <dd className="mono">{me.employeeCode}</dd>
+            </div>
+          ) : null}
           {me.serviceLabel ? (
             <div>
               <dt>Servicio</dt>
@@ -417,6 +436,11 @@ export function ProfileView({
             </div>
           ) : null}
         </dl>
+        {onLogout ? (
+          <button className="btn btn--ghost guard-logout" type="button" onClick={onLogout}>
+            <LogOut aria-hidden /> Cerrar sesión
+          </button>
+        ) : null}
       </section>
 
       <section className="data-section">

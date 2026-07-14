@@ -92,71 +92,10 @@ test("login dark-first: el tema por defecto es oscuro", async ({ page }) => {
   await page.screenshot({ path: shot("login.png"), fullPage: true });
 });
 
-test.describe("guardia / estudiante (movil 390x844)", () => {
-  test.use({ viewport: { width: 390, height: 844 } });
-
-  test("catalogo, curso completado y perfil sin errores de consola", async ({ page }) => {
-    const consoleErrors: string[] = [];
-    const pageErrors: string[] = [];
-    page.on("console", (msg) => {
-      if (msg.type() === "error") {
-        consoleErrors.push(msg.text());
-      }
-    });
-    page.on("pageerror", (err) => {
-      pageErrors.push(`${err.name}: ${err.message}`);
-    });
-
-    await login(page, USERS.guardia);
-
-    // Panel del estudiante: catalogo con sus cursos inscritos.
-    await expect(page.getByRole("button", { name: /Abrir curso/ }).first()).toBeVisible({
-      timeout: 30_000
-    });
-    // Confirma que es el guardia correcto (aparece su nombre en el pill de usuario).
-    await expect(page.getByRole("button", { name: /Marcos Martinez/ })).toBeVisible();
-    await page.screenshot({ path: shot("guardia-catalogo.png"), fullPage: true });
-
-    // Curso COMPLETED (con diploma): "Proteccion Ejecutiva".
-    await page.getByRole("button", { name: "Abrir curso Proteccion Ejecutiva" }).click();
-    await expect(page.getByRole("button", { name: /Volver al catálogo/ })).toBeVisible({
-      timeout: 20_000
-    });
-    await expect(
-      page.getByRole("heading", { name: "Proteccion Ejecutiva", exact: true })
-    ).toBeVisible();
-    await page.screenshot({ path: shot("guardia-curso.png"), fullPage: true });
-
-    // Mi perfil (desde el menu de usuario en la topbar).
-    await page.getByRole("button", { name: /Marcos Martinez/ }).click();
-    await page.getByRole("button", { name: "Mi perfil" }).click();
-    await expect(page.getByRole("heading", { name: "Editar perfil" })).toBeVisible({
-      timeout: 20_000
-    });
-    await page.screenshot({ path: shot("guardia-perfil.png"), fullPage: true });
-
-    // No debe haber excepciones JS sin controlar.
-    expect(pageErrors, `errores JS sin controlar:\n${pageErrors.join("\n")}`).toEqual([]);
-
-    // Errores de consola de la app (descartando 404 de recursos y terceros/Google).
-    const appConsoleErrors = consoleErrors.filter((text) => {
-      const t = text.toLowerCase();
-      return !(
-        t.includes("failed to load resource") ||
-        t.includes("favicon") ||
-        t.includes("accounts.google") ||
-        t.includes("gsi") ||
-        t.includes("net::err")
-      );
-    });
-    // eslint-disable-next-line no-console
-    console.log("[guardia] console errors (crudos):", JSON.stringify(consoleErrors, null, 2));
-    expect.soft(
-      appConsoleErrors,
-      `errores de consola de la app:\n${appConsoleErrors.join("\n")}`
-    ).toEqual([]);
-  });
-});
+// El flujo del guardia (estudiante) vive ahora en su cáscara móvil dedicada:
+// ver e2e/guardia.spec.ts (rango, tabs, +10 XP real). Aquí quedan el login
+// dark-first (rol-agnóstico) y los privilegiados (instructor/admin), que
+// conservan su shell de escritorio intacto.
 
 test.describe("privilegiados (desktop 1280x800)", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
