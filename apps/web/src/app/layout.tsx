@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Saira_Condensed, Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import { ConfirmHost, PromptHost, Toaster } from "./ui";
+import { PwaRegister } from "./pwa-register";
 import "./globals.css";
 
 // Inter se conserva solo como fallback de cuerpo (--font-inter); el body real es Hanken.
@@ -32,11 +33,31 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
+  applicationName: "TSC Capacita",
   title: "Capacitación TSC",
   description: "Plataforma de capacitación de TSC Seguridad Privada: cursos, evaluaciones y diplomas.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Capacita"
+  },
   icons: {
-    icon: "/favicon.png"
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icons/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/icons/favicon-48.png", type: "image/png", sizes: "48x48" },
+      { url: "/favicon.png", type: "image/png", sizes: "64x64" }
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+    shortcut: "/favicon.png"
   }
+};
+
+// Dark-first: el chrome del navegador/PWA usa el ink del design system (ink-700).
+// El color-scheme por tema lo maneja globals.css (dark por defecto, light con
+// data-theme), así que aquí solo fijamos el theme_color del chrome.
+export const viewport: Viewport = {
+  themeColor: "#121E23"
 };
 
 // Dark-first: el default (sin preferencia guardada) es OSCURO. Solo se aplica
@@ -62,6 +83,7 @@ export default function RootLayout({
         <Toaster />
         <ConfirmHost />
         <PromptHost />
+        <PwaRegister />
       </body>
     </html>
   );

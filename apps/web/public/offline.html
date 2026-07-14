@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#121E23" />
+    <title>Sin conexión — TSC Capacita</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        padding: 32px;
+        text-align: center;
+        background:
+          radial-gradient(120% 90% at 50% 0%, #16242b 0%, #090f12 70%);
+        color: #f4f2ec;
+        font-family:
+          "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+          Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      .mark {
+        width: 112px;
+        height: auto;
+        display: block;
+      }
+      .wordmark {
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        font-size: 14px;
+        text-transform: uppercase;
+        color: #cdd6da;
+      }
+      h1 {
+        margin: 4px 0 0;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 0;
+        max-width: 34ch;
+        line-height: 1.5;
+        color: #9fb0b6;
+        font-size: 15px;
+      }
+      .rule {
+        width: 56px;
+        height: 2px;
+        border: 0;
+        background: #a82431;
+        border-radius: 2px;
+        margin: 4px 0;
+      }
+      button {
+        margin-top: 8px;
+        appearance: none;
+        border: 1px solid #2c434d;
+        background: #21343d;
+        color: #f4f2ec;
+        font: inherit;
+        font-weight: 600;
+        padding: 11px 22px;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #2c434d;
+      }
+    </style>
+  </head>
+  <body>
+    <img
+      class="mark"
+      alt="Escudo TSC"
+      src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAACPCAMAAACbDCSMAAAClFBMVEUAAAD08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uz08uytkYGQAAAA23RSTlMAAHLKLCjHeAFi7cAnI7vwZ+/GKSXB8Whh7sVgJGbCX8nEZcgrXsNkXS1jauzMLypwiPjLLvqQCHv3+YEJBXb1V1hbRgMOVll8BnH0/v26B+T2dwJs8uVpb2vzbXNudHUE5tzf3uvirkHg6PvjeRseGjQdWuHnzTc6HNoXS0nbGUwfXEVU/D49O6HTFCKq17gNVZKbqTMxmBAMFjmMqEc1E7Oiz36U3TCetRI/0ou5ppYV6ZfZTb8g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"
+    />
+    <div class="wordmark">Capacita</div>
+    <h1>Sin conexión</h1>
+    <hr class="rule" />
+    <p>
+      No hay señal en este momento. Vuelve a intentar cuando recuperes tu conexión
+      a internet.
+    </p>
+    <button type="button" onclick="location.reload()">Reintentar</button>
+  </body>
+</html>
