@@ -62,6 +62,14 @@ async function main() {
     where: { userId: guardia.id, sourceSystem: "ledger" }
   });
 
+  // 1b) Campana: devuelve las notificaciones del guardia a "sin leer" para que el
+  //     badge de novedades y el panel sean reproducibles en cada corrida de e2e
+  //     (el spec de la campana marca todo como leido al abrir el panel).
+  const resetInbox = await prisma.notification.updateMany({
+    where: { userId: guardia.id },
+    data: { readAt: null }
+  });
+
   // 2) Intramuros: sin lecciones completadas (0%).
   await prisma.lessonProgress.deleteMany({
     where: { userId: guardia.id, lessonId: { in: intramurosLessons } }
@@ -101,7 +109,7 @@ async function main() {
   }
 
   console.log(
-    `[reset-guardia] Baseline restaurado: Intramuros 0% (${removedAttempts.count} intento(s) de examen borrados), Custodia 66.67%, ${removedXp.count} evento(s) de XP del ledger borrados (XP → 450).`
+    `[reset-guardia] Baseline restaurado: Intramuros 0% (${removedAttempts.count} intento(s) de examen borrados), Custodia 66.67%, ${removedXp.count} evento(s) de XP del ledger borrados (XP → 450), ${resetInbox.count} notificacion(es) marcadas como no leidas.`
   );
 }
 

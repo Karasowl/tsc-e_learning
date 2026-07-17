@@ -21,6 +21,9 @@ const prisma = new PrismaClient();
 
 const DEV_PASSWORD = "Capacita2026!";
 const SEED = "seed"; // marcador sourceSystem para filas propias del seed
+// Id fijo de la notificacion demo del guardia (campana). Fijo => upsert idempotente
+// y reseteable a "sin leer" desde reset-guardia-progress.ts.
+const SEED_GUARDIA_NOTIFICATION_ID = "seed-notif-guardia-bienvenida";
 
 // Fechas fijas => folios, codigos de verificacion y timestamps deterministas.
 const ENROLLED_PROTECCION = new Date("2026-04-01T15:00:00.000Z");
@@ -882,6 +885,27 @@ async function main() {
   await prisma.user.update({
     where: { id: guardia.id },
     data: { currentStreak: 3, lastActiveDate: new Date() }
+  });
+
+  // Novedad demo para la campana del guardia: una notificacion in-app sin leer,
+  // para que el panel de la campana (.guard-inbox-panel) tenga contenido real y su
+  // badge de no-leidos aparezca. Id fijo => idempotente (upsert). El reset del
+  // guardia la devuelve a "sin leer" antes de cada corrida de e2e.
+  await prisma.notification.upsert({
+    where: { id: SEED_GUARDIA_NOTIFICATION_ID },
+    update: {
+      kind: "SYSTEM",
+      title: "Bienvenido a tu carrera del guardia",
+      body: "Completa tus cursos y aprueba los examenes para ascender de rango. Revisa aqui tus novedades.",
+      readAt: null
+    },
+    create: {
+      id: SEED_GUARDIA_NOTIFICATION_ID,
+      userId: guardia.id,
+      kind: "SYSTEM",
+      title: "Bienvenido a tu carrera del guardia",
+      body: "Completa tus cursos y aprueba los examenes para ascender de rango. Revisa aqui tus novedades."
+    }
   });
 
   // --- Gamificacion ---

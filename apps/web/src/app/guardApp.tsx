@@ -12,9 +12,11 @@ import { useEffect } from "react";
 import {
   ArrowRight,
   Award,
+  Bell,
   BookOpen,
   Check,
   Crosshair,
+  Flame,
   Lock,
   ShieldCheck,
   Target,
@@ -37,6 +39,8 @@ export type MeProgress = {
   rank: RankInfo;
   employeeCode: string | null;
   serviceLabel: string | null;
+  // Racha diaria (Ola 2): días consecutivos con actividad.
+  streak?: { current: number; lastActiveDate: string | null } | null;
   counts: {
     coursesCompleted: number;
     coursesInProgress: number;
@@ -150,11 +154,15 @@ export function GuardProgressBar({ pct }: { pct: number }) {
 export function GuardTopBar({
   user,
   identity,
-  progress
+  progress,
+  unreadCount = 0,
+  onOpenInbox
 }: {
   user: BasicUser;
   identity: GuardIdentity | null;
   progress: MeProgress | null;
+  unreadCount?: number;
+  onOpenInbox?: () => void;
 }) {
   const employeeCode = identity?.employeeCode ?? progress?.employeeCode ?? null;
   const rank = progress?.rank ?? null;
@@ -166,13 +174,28 @@ export function GuardTopBar({
           <ShieldMark size={30} />
           <span className="guard-wordmark">CAPACITA</span>
         </div>
-        {rank ? (
-          <div className="guard-rankchip" title={`${rank.name} · ${formatXp(xp)} XP`}>
-            <ShieldCheck aria-hidden />
-            <span className="guard-rankchip-name">{rank.name}</span>
-            <span className="guard-rankchip-xp">{formatXp(xp)} XP</span>
-          </div>
-        ) : null}
+        <div className="guard-topbar-actions">
+          {rank ? (
+            <div className="guard-rankchip" title={`${rank.name} · ${formatXp(xp)} XP`}>
+              <ShieldCheck aria-hidden />
+              <span className="guard-rankchip-name">{rank.name}</span>
+              <span className="guard-rankchip-xp">{formatXp(xp)} XP</span>
+            </div>
+          ) : null}
+          {onOpenInbox ? (
+            <button
+              type="button"
+              className="guard-bell"
+              onClick={onOpenInbox}
+              aria-label={unreadCount > 0 ? `Novedades, ${unreadCount} sin leer` : "Novedades"}
+            >
+              <Bell aria-hidden />
+              {unreadCount > 0 ? (
+                <span className="guard-bell-badge">{unreadCount > 9 ? "9+" : unreadCount}</span>
+              ) : null}
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="guard-identity">
         <p className="guard-eyebrow">COLABORADOR{employeeCode ? ` · ${employeeCode}` : ""}</p>
@@ -244,6 +267,7 @@ export function RankTab({
   const { rank, xp, counts } = progress;
   const atMax = rank.next === null;
   const nextName = nextRankName(rank.level);
+  const streak = Math.max(0, progress.streak?.current ?? 0);
   return (
     <section className="rank-tab">
       <div className="rank-hero card">
@@ -253,6 +277,11 @@ export function RankTab({
           <strong>{formatXp(xp)}</strong>
           <span className="mono-label">XP TOTAL</span>
         </p>
+        <div className="rank-streak" title="Días consecutivos con actividad">
+          <Flame aria-hidden />
+          <strong>{streak} {streak === 1 ? "día" : "días"}</strong>
+          <span className="mono-label">DE RACHA</span>
+        </div>
         <div className="rank-progress-block">
           <GuardProgressBar pct={rank.pct} />
           <p className="rank-progress-meta mono-label">

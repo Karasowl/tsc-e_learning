@@ -15,7 +15,8 @@ import {
   computeExamLocked,
   computeSequentialLessons,
   computeStreak,
-  isEnrollmentExpired
+  isEnrollmentExpired,
+  type CoursePrereq
 } from "../lib/gating.js";
 
 const courseRefSchema = z.object({
@@ -319,6 +320,27 @@ export async function registerCourseRoutes(server: FastifyInstance) {
       return reply.code(409).send({ error: "El curso está archivado" });
     }
 
+    // Bloqueo duro (Fase C): un estudiante solo puede completar la leccion si el
+    // curso no esta bloqueado por prerrequisitos y las lecciones anteriores (por
+    // orden de lectura) ya estan completas. Docentes/admin quedan exentos para no
+    // romper su vista de autoria/preview. El rechazo es 409 y no crea estado.
+    if (!isAdmin(auth) && !auth.roles.includes("TEACHER")) {
+      const [prerequisites, completedCourseIds, orderedLessons] = await Promise.all([
+        coursePrerequisites(lesson.courseId),
+        completedCourseIdSet(auth.userId),
+        orderedLessonsWithProgress(auth.userId, lesson.courseId)
+      ]);
+      const gate = resolveLessonCompletionGate({
+        prerequisites,
+        completedCourseIds,
+        orderedLessons,
+        targetLessonId: lesson.id
+      });
+      if (!gate.allowed) {
+        return reply.code(409).send({ error: gate.message });
+      }
+    }
+
     const completedAt = new Date();
 
     // Detecta si es la PRIMERA vez que esta leccion se completa: solo entonces la
@@ -532,6 +554,64 @@ async function updateCourseProgress(userId: string, courseId: string) {
     completedAt: updated.completedAt,
     newlyCompleted
   };
+}
+
+/**
+ * Enforcement (bloqueo duro, Fase C) para completar una leccion. Compone las
+ * reglas puras de gating: el curso no debe estar bloqueado por prerrequisitos y
+ * la leccion objetivo debe estar disponible por orden secuencial (todas las
+ * anteriores completas). Devuelve el mensaje al estudiante cuando corresponde.
+ * Pura y total para poder probarla sin base de datos.
+ */
+export function resolveLessonCompletionGate(input: {
+  prerequisites: CoursePrereq[];
+  completedCourseIds: Set<string>;
+  orderedLessons: Array<{ id: string; completed: boolean }>;
+  targetLessonId: string;
+}): { allowed: boolean; message?: string } {
+  const lock = computeCourseLock(input.prerequisites, input.completedCourseIds);
+  if (lock.locked) {
+    return { allowed: false, message: `Este curso está bloqueado: ${lock.lockReason}` };
+  }
+
+  const gate = computeSequentialLessons(input.orderedLessons);
+  const target = gate.find((lesson) => lesson.id === input.targetLessonId);
+  if (target && !target.available) {
+    return { allowed: false, message: "Completa las lecciones anteriores antes de esta." };
+  }
+
+  return { allowed: true };
+}
+
+/** Prerrequisitos del curso, mapeados a la forma que consume computeCourseLock. */
+async function coursePrerequisites(courseId: string): Promise<CoursePrereq[]> {
+  const rows = await getPrisma().coursePrerequisite.findMany({
+    where: { courseId },
+    include: { requires: { select: { id: true, title: true } } }
+  });
+  return rows.map((row) => ({ requiresId: row.requiresId, requiresTitle: row.requires.title }));
+}
+
+/**
+ * Lecciones del curso en orden de lectura (modulos por posicion, lecciones por
+ * posicion) con su estado de completado para el usuario. Replica exactamente el
+ * orden que el detalle del curso muestra, para que el enforcement coincida con
+ * la disponibilidad secuencial que ve el estudiante.
+ */
+async function orderedLessonsWithProgress(userId: string, courseId: string) {
+  const modules = await getPrisma().courseModule.findMany({
+    where: { courseId },
+    orderBy: { position: "asc" },
+    include: {
+      lessons: {
+        orderBy: { position: "asc" },
+        include: { progress: { where: { userId }, take: 1 } }
+      }
+    }
+  });
+  return modules.flatMap((module) =>
+    module.lessons.map((lesson) => ({ id: lesson.id, completed: lesson.progress.length > 0 }))
+  );
 }
 
 /**

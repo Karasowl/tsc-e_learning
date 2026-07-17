@@ -18,8 +18,10 @@ import {
   Download,
   FileText,
   GraduationCap,
+  Lock,
   LogOut,
   Mail,
+  Megaphone,
   Moon,
   Play,
   RefreshCw,
@@ -76,14 +78,23 @@ type CourseSummary = {
     lessons: number;
     quizzes: number;
   };
+  // Candados y vencimiento (Ola 2): informativos en el catálogo.
+  locked?: boolean;
+  lockReason?: string | null;
+  expired?: boolean;
 };
 
 type CourseDetail = CourseSummary & {
   description: string | null;
+  // Candados del detalle (Ola 2).
+  examLocked?: boolean;
+  prerequisites?: Array<{ id: string; title: string; completed: boolean }>;
   enrollment: {
     status: string;
     progressPercent: number | null;
     completedAt: string | null;
+    expiresAt?: string | null;
+    expired?: boolean;
   } | null;
   modules: CourseModule[];
 };
@@ -109,6 +120,9 @@ type Lesson = {
   durationSec: number | null;
   completed: boolean;
   completedAt: string | null;
+  // Bloqueo secuencial (Ola 2): disponible solo si las anteriores están completas.
+  available?: boolean;
+  locked?: boolean;
   assets: Asset[];
 };
 
@@ -134,6 +148,8 @@ type Quiz = {
   autoStart: boolean;
   hideTimeDisplay: boolean;
   questionCount: number;
+  // Candado del examen (Ola 2): bloqueado hasta completar todas las lecciones.
+  examLocked?: boolean;
   lastAttempt: AttemptSummary | null;
 };
 
@@ -209,6 +225,42 @@ type NotificationLog = {
   createdAt: string;
 };
 
+// Bandeja in-app del guardia (campana): notificaciones personales + anuncios.
+type NotificationItem = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  linkType: string | null;
+  linkId: string | null;
+  read: boolean;
+  readAt: string | null;
+  createdAt: string;
+};
+
+type Announcement = {
+  id: string;
+  scope: string;
+  courseId: string | null;
+  courseTitle: string | null;
+  title: string;
+  body: string;
+  author: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+};
+
+// Error de API que conserva el status HTTP para poder distinguir el 409 de
+// candado (acción bloqueada) y mostrarlo como aviso sin romper la vista.
+class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 type AnswerState = Record<
   string,
   { selectedOptionIds: string[]; text: string; matches?: Record<string, string>; order?: string[] }
@@ -248,6 +300,11 @@ export default function Home() {
   const [identity, setIdentity] = useState<GuardIdentity | null>(null);
   const [guardTab, setGuardTab] = useState<GuardTab>("rank");
   const [ascend, setAscend] = useState<string | null>(null);
+  // Bandeja del guardia (campana): notificaciones + anuncios.
+  const [inboxNotifications, setInboxNotifications] = useState<NotificationItem[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [inboxOpen, setInboxOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogFilter, setCatalogFilter] = useState<"all" | "in-progress" | "not-started" | "completed">("all");
   // Ids de cursos cuya portada migrada no cargó: caemos al placeholder de marca.
@@ -421,10 +478,21 @@ export default function Home() {
         window.location.reload();
       }
       const body = await response.json().catch(() => ({ error: response.statusText })) as { error?: unknown };
-      throw new Error(typeof body.error === "string" ? body.error : `HTTP ${response.status}`);
+      throw new ApiError(typeof body.error === "string" ? body.error : `HTTP ${response.status}`, response.status);
     }
 
     return response.json() as Promise<T>;
+  }
+
+  // Un 409 desde el servidor es un candado que se activó pese a la UI (p. ej. el
+  // tiempo del examen expiró o un prerrequisito cambió): se muestra el motivo como
+  // aviso y la vista NO se rompe. Cualquier otro error va al banner de siempre.
+  function handleActionError(actionError: unknown) {
+    if (actionError instanceof ApiError && actionError.status === 409) {
+      toast.error(actionError.message);
+      return;
+    }
+    setError(errorMessage(actionError));
   }
 
   async function loadInitialData(authToken = token) {
@@ -444,6 +512,7 @@ export default function Home() {
       await loadCertificates();
       if (isPureStudent) {
         await loadGamification();
+        await loadInbox().catch(() => undefined);
       }
       if (isPrivileged) {
         await loadReport();
@@ -557,6 +626,34 @@ export default function Home() {
     setBadges(badgePayload);
   }
 
+  // Bandeja in-app del guardia: notificaciones personales + anuncios. El badge de
+  // no-leídos sale de unreadCount del API (nunca un conteo inventado en el cliente).
+  async function loadInbox() {
+    const [inbox, announcementPayload] = await Promise.all([
+      api<{ notifications: NotificationItem[]; unreadCount: number }>("/me/notifications"),
+      api<{ announcements: Announcement[] }>("/me/announcements")
+    ]);
+    setInboxNotifications(inbox.notifications);
+    setUnreadCount(inbox.unreadCount);
+    setAnnouncements(announcementPayload.announcements);
+  }
+
+  // Abre la campana y marca todo como leído (read-all): el badge cae a 0 en cuanto
+  // el guardia mira sus novedades. Un fallo al marcar no impide ver la bandeja.
+  async function openInbox() {
+    setInboxOpen(true);
+    if (unreadCount > 0) {
+      const stamp = new Date().toISOString();
+      try {
+        await api("/me/notifications/read-all", { method: "POST", body: "{}" });
+        setUnreadCount(0);
+        setInboxNotifications((prev) => prev.map((item) => (item.read ? item : { ...item, read: true, readAt: stamp })));
+      } catch {
+        // Silencioso: la bandeja se muestra igual; el conteo se corregirá al recargar.
+      }
+    }
+  }
+
   // Aplica el bloque de gamificación de una respuesta (toast de XP + ascenso) y
   // refresca el progreso. Solo para el estudiante puro (cáscara del guardia).
   async function applyGamification(gamification?: Gamification) {
@@ -604,7 +701,7 @@ export default function Home() {
       await loadCertificates();
       await applyGamification(result.gamification);
     } catch (completeError) {
-      setError(errorMessage(completeError));
+      handleActionError(completeError);
     } finally {
       setBusy(false);
     }
@@ -633,7 +730,7 @@ export default function Home() {
         )
       );
     } catch (quizError) {
-      setError(errorMessage(quizError));
+      handleActionError(quizError);
     } finally {
       setBusy(false);
     }
@@ -677,7 +774,7 @@ export default function Home() {
         await loadCourse(selectedCourse.id, { preserveAttempt: true });
       }
     } catch (submitError) {
-      setError(errorMessage(submitError));
+      handleActionError(submitError);
     } finally {
       setBusy(false);
     }
@@ -700,7 +797,7 @@ export default function Home() {
         setView("certificates");
       }
     } catch (certificateError) {
-      setError(errorMessage(certificateError));
+      handleActionError(certificateError);
     } finally {
       setBusy(false);
     }
@@ -869,6 +966,10 @@ export default function Home() {
     setBadges(null);
     setIdentity(null);
     setGuardTab("rank");
+    setInboxNotifications([]);
+    setAnnouncements([]);
+    setUnreadCount(0);
+    setInboxOpen(false);
   }
 
   // Tab "Cursos" de la cáscara del guardia: reutiliza el catálogo real, el
@@ -897,27 +998,52 @@ export default function Home() {
             {selectedCourse.modules.map((module) => (
               <div className="module-block" key={module.id}>
                 <h3>{module.title}</h3>
-                {module.lessons.map((lesson) => (
-                  <button
-                    className={`lesson-row ${activeLessonId === lesson.id ? "active" : ""}`}
-                    key={lesson.id}
-                    onClick={() => {
-                      setQuizAttempt(null);
-                      setActiveLessonId(lesson.id);
-                    }}
-                    type="button"
-                  >
-                    {lesson.completed ? <Check aria-hidden /> : <Play aria-hidden />}
-                    <span>{lesson.title}</span>
-                  </button>
-                ))}
-                {module.quizzes.map((quiz) => (
-                  <button className="quiz-row" key={quiz.id} onClick={() => startQuiz(quiz.id)} type="button">
-                    <Clock aria-hidden />
-                    <span>{quiz.title}</span>
-                    <small>{quiz.timeLimitSec ? `${Math.round(quiz.timeLimitSec / 60)} min` : "Sin tiempo"}</small>
-                  </button>
-                ))}
+                {module.lessons.map((lesson) => {
+                  // Estado secuencial: hecha (completa), actual (disponible sin
+                  // completar) o bloqueada (una anterior sigue pendiente).
+                  const blocked = lesson.locked === true && !lesson.completed;
+                  if (blocked) {
+                    return (
+                      <div className="lesson-row locked" key={lesson.id} aria-disabled="true">
+                        <Lock aria-hidden />
+                        <span>{lesson.title}</span>
+                        <small>Bloqueada</small>
+                      </div>
+                    );
+                  }
+                  const state = lesson.completed ? "done" : "current";
+                  return (
+                    <button
+                      className={`lesson-row ${state} ${activeLessonId === lesson.id ? "active" : ""}`}
+                      key={lesson.id}
+                      onClick={() => {
+                        setQuizAttempt(null);
+                        setActiveLessonId(lesson.id);
+                      }}
+                      type="button"
+                    >
+                      {lesson.completed ? <Check aria-hidden /> : <Play aria-hidden />}
+                      <span>{lesson.title}</span>
+                    </button>
+                  );
+                })}
+                {module.quizzes.map((quiz) =>
+                  quiz.examLocked ? (
+                    <div className="quiz-row exam-locked" key={quiz.id} aria-disabled="true">
+                      <Lock aria-hidden />
+                      <div className="exam-locked-body">
+                        <span>{quiz.title}</span>
+                        <small>Completa todas las lecciones para desbloquear el examen</small>
+                      </div>
+                    </div>
+                  ) : (
+                    <button className="quiz-row" key={quiz.id} onClick={() => startQuiz(quiz.id)} type="button">
+                      <Clock aria-hidden />
+                      <span>{quiz.title}</span>
+                      <small>{quiz.timeLimitSec ? `${Math.round(quiz.timeLimitSec / 60)} min` : "Sin tiempo"}</small>
+                    </button>
+                  )
+                )}
               </div>
             ))}
           </div>
@@ -1044,6 +1170,37 @@ export default function Home() {
         ) : (
           <div className="guard-course-list">
             {visibleCourses.map((course) => {
+              const cover = (
+                <CourseCover
+                  thumbnail={course.thumbnail}
+                  title={course.title}
+                  failed={coverFailed.has(course.id)}
+                  onFailed={() => markCoverFailed(course.id)}
+                  variant="card"
+                />
+              );
+              // Curso bloqueado: no abre su detalle; muestra el candado y el motivo
+              // (prerrequisito) tal cual lo entrega la plataforma.
+              if (course.locked) {
+                return (
+                  <div className="guard-course-card locked" key={course.id} aria-disabled="true">
+                    <div className="course-card-cover-wrap">
+                      {cover}
+                      <span className="course-lock-badge">
+                        <Lock aria-hidden />
+                      </span>
+                    </div>
+                    <div className="guard-course-card-body">
+                      <span className="pill pill--locked">BLOQUEADO</span>
+                      <strong>{course.title}</strong>
+                      <small className="mono-label">
+                        {course.counts.lessons} lecciones · {course.counts.quizzes} exámenes
+                      </small>
+                      {course.lockReason ? <p className="course-lock-reason">{course.lockReason}</p> : null}
+                    </div>
+                  </div>
+                );
+              }
               const percent = Math.round(course.progressPercent ?? 0);
               const tag =
                 percent >= 100
@@ -1059,15 +1216,10 @@ export default function Home() {
                   type="button"
                   aria-label={`Abrir curso ${course.title}`}
                 >
-                  <CourseCover
-                    thumbnail={course.thumbnail}
-                    title={course.title}
-                    failed={coverFailed.has(course.id)}
-                    onFailed={() => markCoverFailed(course.id)}
-                    variant="card"
-                  />
+                  {cover}
                   <div className="guard-course-card-body">
                     <span className={`pill ${tag.cls}`}>{tag.label}</span>
+                    {course.expired ? <span className="pill pill--expired">ACCESO VENCIDO</span> : null}
                     <strong>{course.title}</strong>
                     <small className="mono-label">
                       {course.counts.lessons} lecciones · {course.counts.quizzes} exámenes
@@ -1088,7 +1240,13 @@ export default function Home() {
   if (isPureStudent && token && user) {
     return (
       <main className="guard-shell">
-        <GuardTopBar user={user} identity={identity} progress={progress} />
+        <GuardTopBar
+          user={user}
+          identity={identity}
+          progress={progress}
+          unreadCount={unreadCount}
+          onOpenInbox={openInbox}
+        />
         <div className="guard-scroll">
           {error ? <div className="error-banner">{error}</div> : null}
           {guardTab === "rank" ? (
@@ -1105,15 +1263,30 @@ export default function Home() {
           {guardTab === "courses" ? renderCoursesTab() : null}
           {guardTab === "achievements" ? <AchievementsTab badges={badges} progress={progress} /> : null}
           {guardTab === "profile" ? (
-            <ProfileView
-              token={token}
-              onProfileUpdated={updateDisplayName}
-              rank={progress ? { name: progress.rank.name, level: progress.rank.level, xp: progress.xp } : null}
-              onLogout={logout}
-            />
+            <>
+              <ProfileView
+                token={token}
+                onProfileUpdated={updateDisplayName}
+                rank={progress ? { name: progress.rank.name, level: progress.rank.level, xp: progress.xp } : null}
+                onLogout={logout}
+              />
+              <GuardDiplomas
+                certificates={certificates}
+                busy={busy}
+                onOpen={openCertificate}
+                onDownload={downloadCertificatePdf}
+              />
+            </>
           ) : null}
         </div>
         <GuardTabBar active={guardTab} onChange={setGuardTab} />
+        {inboxOpen ? (
+          <GuardInboxPanel
+            notifications={inboxNotifications}
+            announcements={announcements}
+            onClose={() => setInboxOpen(false)}
+          />
+        ) : null}
         <AscendOverlay rankName={ascend} onDismiss={() => setAscend(null)} />
       </main>
     );
@@ -2038,6 +2211,146 @@ function CourseCover({
   );
 }
 
+// Parrilla de diplomas del guardia (tab Perfil): abre/descarga los certificados ya
+// emitidos reutilizando openCertificate/downloadCertificatePdf. Estado vacío honesto.
+function GuardDiplomas({
+  certificates,
+  busy,
+  onOpen,
+  onDownload
+}: {
+  certificates: Certificate[];
+  busy: boolean;
+  onOpen: (certificateId: string) => void;
+  onDownload: (certificateId: string, folio: string) => void;
+}) {
+  return (
+    <section className="guard-diplomas">
+      <div className="guard-block-head">
+        <Award aria-hidden />
+        <h3>Mis diplomas</h3>
+        <span className="mono-label">{certificates.length}</span>
+      </div>
+      {certificates.length === 0 ? (
+        <p className="guard-empty">Aún no tienes diplomas. Aprueba un curso para obtener el primero.</p>
+      ) : (
+        <div className="guard-diploma-grid">
+          {certificates.map((certificate) => (
+            <article className="guard-diploma-card card" key={certificate.id}>
+              <div className="guard-diploma-info">
+                <span className="guard-diploma-seal" aria-hidden>
+                  <Award aria-hidden />
+                </span>
+                <div className="guard-diploma-meta">
+                  <strong>{certificate.course.title}</strong>
+                  <span className="mono-label">{certificate.folio}</span>
+                  <small>{new Date(certificate.issuedAt).toLocaleDateString("es-MX")}</small>
+                </div>
+              </div>
+              <div className="guard-diploma-actions">
+                <button className="btn btn--brand" disabled={busy} onClick={() => onOpen(certificate.id)} type="button">
+                  <Award aria-hidden /> Ver diploma
+                </button>
+                <button
+                  className="btn btn--ghost"
+                  disabled={busy}
+                  onClick={() => onDownload(certificate.id, certificate.folio)}
+                  type="button"
+                >
+                  <Download aria-hidden /> Descargar PDF
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Panel de la campana: notificaciones personales + anuncios de la plataforma. Se
+// abre desde el topbar del guardia; los no-leídos ya se marcaron al abrir.
+function GuardInboxPanel({
+  notifications,
+  announcements,
+  onClose
+}: {
+  notifications: NotificationItem[];
+  announcements: Announcement[];
+  onClose: () => void;
+}) {
+  const hasNothing = notifications.length === 0 && announcements.length === 0;
+  return (
+    <div
+      className="guard-inbox-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Novedades"
+      onClick={onClose}
+    >
+      <div className="guard-inbox-panel" onClick={(event) => event.stopPropagation()}>
+        <header className="guard-inbox-head">
+          <div className="guard-inbox-title">
+            <Bell aria-hidden />
+            <h3>Novedades</h3>
+          </div>
+          <button className="icon-button" onClick={onClose} title="Cerrar" type="button" aria-label="Cerrar">
+            <X aria-hidden />
+          </button>
+        </header>
+        <div className="guard-inbox-body">
+          {hasNothing ? (
+            <p className="guard-empty">No tienes novedades por ahora.</p>
+          ) : (
+            <>
+              {notifications.length > 0 ? (
+                <section className="guard-inbox-section">
+                  <p className="guard-inbox-eyebrow mono-label">Notificaciones</p>
+                  <ul className="guard-inbox-list">
+                    {notifications.map((item) => (
+                      <li className={`guard-inbox-item ${item.read ? "" : "unread"}`} key={item.id}>
+                        <span className="guard-inbox-dot" aria-hidden />
+                        <div className="guard-inbox-item-body">
+                          <strong>{item.title}</strong>
+                          {item.body ? <p>{item.body}</p> : null}
+                          <time className="mono-label">{formatInboxDate(item.createdAt)}</time>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+              {announcements.length > 0 ? (
+                <section className="guard-inbox-section">
+                  <p className="guard-inbox-eyebrow mono-label">Anuncios</p>
+                  <ul className="guard-inbox-list">
+                    {announcements.map((item) => (
+                      <li className="guard-inbox-item announcement" key={item.id}>
+                        <span className="guard-inbox-icon" aria-hidden>
+                          <Megaphone aria-hidden />
+                        </span>
+                        <div className="guard-inbox-item-body">
+                          <strong>{item.title}</strong>
+                          <p>{item.body}</p>
+                          <span className="guard-inbox-meta mono-label">
+                            {item.courseTitle ? `${item.courseTitle} · ` : ""}
+                            {formatInboxDate(item.publishedAt ?? item.createdAt)}
+                            {item.author ? ` · ${item.author}` : ""}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProgressBar({ value }: { value: number }) {
   const percent = Math.max(0, Math.min(100, value));
   return (
@@ -2072,6 +2385,10 @@ function LessonPanel({
   hasNext: boolean;
 }) {
   const media = resolveLessonMedia(lesson);
+  const videoAssetId = media?.kind === "asset" ? media.assetId : null;
+  const videoToken = useVideoToken(token, videoAssetId);
+  // El asset que se reproduce como video no se repite en la lista de descargas.
+  const downloadableAssets = videoAssetId ? lesson.assets.filter((asset) => asset.id !== videoAssetId) : lesson.assets;
   return (
     <article className="content-surface">
       <div className="section-header">
@@ -2088,15 +2405,29 @@ function LessonPanel({
         <div className="video-frame">
           {media.kind === "file" ? (
             <video controls playsInline preload="metadata" src={media.src} style={{ display: "block", width: "100%", height: "100%" }} />
+          ) : media.kind === "asset" ? (
+            videoToken.url ? (
+              <video
+                controls
+                playsInline
+                preload="metadata"
+                src={videoToken.url}
+                style={{ display: "block", width: "100%", height: "100%" }}
+              />
+            ) : (
+              <div className="video-loading">
+                {videoToken.error ? "No se pudo cargar el video." : "Cargando video…"}
+              </div>
+            )
           ) : (
             <iframe allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowFullScreen src={media.src} title={lesson.title} />
           )}
         </div>
       ) : null}
       {lesson.body ? <div className="lesson-body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(lesson.body) }} /> : null}
-      {lesson.assets.length > 0 ? (
+      {downloadableAssets.length > 0 ? (
         <div className="asset-list">
-          {lesson.assets.map((asset) =>
+          {downloadableAssets.map((asset) =>
             asset.originalUrl ? (
               <a href={asset.originalUrl} key={asset.id} rel="noreferrer" target="_blank">
                 <FileText aria-hidden />
@@ -2131,6 +2462,28 @@ function LessonPanel({
   );
 }
 
+// Devuelve true si la pregunta ya tiene una respuesta válida para poder avanzar.
+function isQuestionAnswered(question: QuizQuestion, answer: AnswerState[string] | undefined): boolean {
+  if (!answer) {
+    return false;
+  }
+  if (question.type === "FILL_IN_THE_BLANK" || question.type === "SHORT_TEXT" || question.type === "OPEN_ENDED") {
+    return (answer.text ?? "").trim().length > 0;
+  }
+  if (question.type === "MATCHING") {
+    return question.options.every((option) => ((answer.matches ?? {})[option.id] ?? "").length > 0);
+  }
+  if (question.type === "ORDERING") {
+    // El orden siempre existe (arranca con el orden por defecto), así que se da por resuelta.
+    return true;
+  }
+  return (answer.selectedOptionIds ?? []).length > 0;
+}
+
+// Examen paso a paso: UNA pregunta por paso, con barra de segmentos, contador
+// "Pregunta X de N", Anterior/Siguiente y un único "Enviar evaluación" al final.
+// El payload de envío y el motor de calificación NO cambian: solo se navega la
+// misma lista de preguntas y respuestas en el estado del padre.
 function QuizPanel({
   answers,
   attempt,
@@ -2150,50 +2503,134 @@ function QuizPanel({
 }) {
   const remaining = useRemainingTime(attempt.attempt.dueAt);
   const submitted = attempt.attempt.status !== "IN_PROGRESS";
+  const questions = attempt.questions;
+  const total = questions.length;
+  const [step, setStep] = useState(0);
+  const [validation, setValidation] = useState<string | null>(null);
 
-  function setQuestionAnswer(question: QuizQuestion, optionId: string, checked: boolean) {
-    const current = answers[question.id] ?? { selectedOptionIds: [], text: "" };
+  // Cada intento nuevo (id distinto) reinicia el stepper a la primera pregunta.
+  useEffect(() => {
+    setStep(0);
+    setValidation(null);
+  }, [attempt.attempt.id]);
+
+  const currentStep = Math.min(step, Math.max(0, total - 1));
+  const question = questions[currentStep];
+
+  // Envuelve el setter del padre para limpiar el aviso de validación al responder.
+  function handleAnswerChange(next: AnswerState) {
+    setValidation(null);
+    onAnswerChange(next);
+  }
+
+  function setQuestionAnswer(target: QuizQuestion, optionId: string, checked: boolean) {
+    const current = answers[target.id] ?? { selectedOptionIds: [], text: "" };
     const selectedOptionIds =
-      question.type === "MULTIPLE_CHOICE"
+      target.type === "MULTIPLE_CHOICE"
         ? checked
           ? Array.from(new Set([...current.selectedOptionIds, optionId]))
           : current.selectedOptionIds.filter((id) => id !== optionId)
         : [optionId];
-    onAnswerChange({ ...answers, [question.id]: { ...current, selectedOptionIds } });
+    handleAnswerChange({ ...answers, [target.id]: { ...current, selectedOptionIds } });
   }
 
+  function goPrev() {
+    setValidation(null);
+    setStep((value) => Math.max(0, value - 1));
+  }
+
+  function goNext() {
+    if (question && !isQuestionAnswered(question, answers[question.id])) {
+      setValidation("Selecciona una respuesta");
+      return;
+    }
+    setValidation(null);
+    setStep((value) => Math.min(total - 1, value + 1));
+  }
+
+  function handleSubmit() {
+    if (question && !isQuestionAnswered(question, answers[question.id])) {
+      setValidation("Selecciona una respuesta");
+      return;
+    }
+    setValidation(null);
+    onSubmit();
+  }
+
+  // Tras enviar, el examen persiste como resultado (no se reinicia el stepper).
+  if (submitted) {
+    return (
+      <article className="content-surface quiz-stepper">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Evaluación</p>
+            <h2>Resultado</h2>
+          </div>
+          <div className="quiz-actions">
+            <button className="icon-button" onClick={onClose} title="Cerrar" type="button">
+              <X aria-hidden />
+            </button>
+          </div>
+        </div>
+        <QuizResult attempt={attempt.attempt} onRetry={() => onRetry(attempt.attempt.quizId)} onClose={onClose} />
+      </article>
+    );
+  }
+
+  const isLast = currentStep >= total - 1;
+
   return (
-    <article className="content-surface">
+    <article className="content-surface quiz-stepper">
       <div className="section-header">
         <div>
-          <p className="eyebrow">{attempt.questions.length} preguntas</p>
-          <h2>Evaluación</h2>
+          <p className="eyebrow">Evaluación</p>
+          <h2>Pregunta {currentStep + 1} de {total}</h2>
         </div>
         <div className="quiz-actions">
-          {attempt.attempt.dueAt && !submitted ? <span className="timer">{remaining}</span> : null}
+          {attempt.attempt.dueAt ? (
+            <span className="timer">
+              <Clock aria-hidden /> {remaining}
+            </span>
+          ) : null}
           <button className="icon-button" onClick={onClose} title="Cerrar" type="button">
             <X aria-hidden />
           </button>
         </div>
       </div>
-      {attempt.questions.map((question) => (
-        <fieldset className="question-block" disabled={submitted} key={question.id}>
+
+      <div
+        className="quiz-progress-segments"
+        role="progressbar"
+        aria-valuenow={currentStep + 1}
+        aria-valuemin={1}
+        aria-valuemax={total}
+        aria-label={`Pregunta ${currentStep + 1} de ${total}`}
+      >
+        {questions.map((item, index) => {
+          const answered = isQuestionAnswered(item, answers[item.id]);
+          const state = index === currentStep ? "current" : answered ? "answered" : index < currentStep ? "visited" : "";
+          return <span key={item.id} className={`quiz-seg ${state}`} />;
+        })}
+      </div>
+
+      {question ? (
+        <fieldset className="question-block" key={question.id}>
           <legend>{question.prompt}</legend>
           {question.description ? <p>{question.description}</p> : null}
           {question.type === "FILL_IN_THE_BLANK" || question.type === "SHORT_TEXT" || question.type === "OPEN_ENDED" ? (
             <input
               value={answers[question.id]?.text ?? ""}
               onChange={(event) =>
-                onAnswerChange({
+                handleAnswerChange({
                   ...answers,
                   [question.id]: { ...(answers[question.id] ?? { selectedOptionIds: [], text: "" }), text: event.target.value }
                 })
               }
             />
           ) : question.type === "MATCHING" ? (
-            <MatchingInput question={question} answers={answers} onAnswerChange={onAnswerChange} />
+            <MatchingInput question={question} answers={answers} onAnswerChange={handleAnswerChange} />
           ) : question.type === "ORDERING" ? (
-            <OrderingInput question={question} answers={answers} onAnswerChange={onAnswerChange} />
+            <OrderingInput question={question} answers={answers} onAnswerChange={handleAnswerChange} />
           ) : (
             question.options.map((option) => (
               <label className="option-row" key={option.id}>
@@ -2208,15 +2645,29 @@ function QuizPanel({
             ))
           )}
         </fieldset>
-      ))}
-      {submitted ? (
-        <QuizResult attempt={attempt.attempt} onRetry={() => onRetry(attempt.attempt.quizId)} onClose={onClose} />
-      ) : (
-        <button className="primary-button" disabled={busy} onClick={onSubmit} type="button">
-          <GraduationCap aria-hidden />
-          Enviar evaluación
+      ) : null}
+
+      {validation ? (
+        <p className="quiz-step-validation" role="alert">
+          {validation}
+        </p>
+      ) : null}
+
+      <div className="quiz-stepper-nav">
+        <button className="secondary-button" disabled={currentStep === 0} onClick={goPrev} type="button">
+          <ArrowLeft aria-hidden /> Anterior
         </button>
-      )}
+        {isLast ? (
+          <button className="primary-button" disabled={busy} onClick={handleSubmit} type="button">
+            <GraduationCap aria-hidden />
+            Enviar evaluación
+          </button>
+        ) : (
+          <button className="secondary-button" onClick={goNext} type="button">
+            Siguiente <ChevronRight aria-hidden />
+          </button>
+        )}
+      </div>
     </article>
   );
 }
@@ -2375,16 +2826,30 @@ function vimeoEmbedUrl(url: string): string | null {
   return match?.[1] ? `https://player.vimeo.com/video/${match[1]}` : null;
 }
 
+type LessonMedia =
+  | { kind: "iframe"; src: string }
+  | { kind: "file"; src: string }
+  | { kind: "asset"; assetId: string };
+
 // Resuelve el medio de la lección respetando videoProvider/videoEmbed:
-//  - archivo (MP4/webm/…) => reproductor nativo <video controls>;
+//  - asset subido (URL /assets/:id/file|stream o adjunto de video) => reproductor
+//    nativo con token corto (GET /assets/:id/video-token) por seguridad;
+//  - archivo externo directo (MP4/webm/…) => reproductor nativo <video controls>;
 //  - embed explícito (videoEmbed) => se usa tal cual como src del iframe;
 //  - Vimeo => player.vimeo.com/video/ID;
 //  - en su defecto, YouTube (comportamiento previo intacto).
-function resolveLessonMedia(lesson: Lesson): { kind: "iframe" | "file"; src: string } | null {
+function resolveLessonMedia(lesson: Lesson): LessonMedia | null {
   const provider = (lesson.videoProvider ?? "").trim().toUpperCase();
   const embed = (lesson.videoEmbed ?? "").trim();
   const url = (lesson.videoUrl ?? "").trim();
   const primary = embed || url;
+
+  // Video que vive como asset de la plataforma: su URL apunta a /assets/:id/file
+  // o /assets/:id/stream. Se reproduce con token corto, no con la URL cruda.
+  const assetMatch = primary.match(/\/assets\/([^/?#]+)\/(?:file|stream)/i);
+  if (assetMatch?.[1]) {
+    return { kind: "asset", assetId: assetMatch[1] };
+  }
 
   const looksLikeFile = /\.(mp4|webm|ogg|ogv|mov|m4v)(\?|#|$)/i.test(primary);
   const providerIsFile = ["FILE", "MP4", "UPLOAD", "HTML5", "VIDEO_FILE"].includes(provider);
@@ -2405,7 +2870,60 @@ function resolveLessonMedia(lesson: Lesson): { kind: "iframe" | "file"; src: str
   }
 
   const youtube = youtubeEmbedUrl(url || null);
-  return youtube ? { kind: "iframe", src: youtube } : null;
+  if (youtube) {
+    return { kind: "iframe", src: youtube };
+  }
+
+  // Sin enlace de video: si hay un adjunto de video subido, se reproduce por token.
+  if (!primary) {
+    const videoAsset = lesson.assets.find((asset) => (asset.mimeType ?? "").toLowerCase().startsWith("video/"));
+    if (videoAsset) {
+      return { kind: "asset", assetId: videoAsset.id };
+    }
+  }
+
+  return null;
+}
+
+// Pide un token de streaming corto para un asset de video y devuelve la URL lista
+// para <video src>. Reintenta al cambiar de asset; no rompe la lección si falla.
+function useVideoToken(token: string, assetId: string | null) {
+  const [state, setState] = useState<{ url: string | null; loading: boolean; error: boolean }>({
+    url: null,
+    loading: false,
+    error: false
+  });
+  useEffect(() => {
+    if (!assetId) {
+      setState({ url: null, loading: false, error: false });
+      return;
+    }
+    let cancelled = false;
+    setState({ url: null, loading: true, error: false });
+    fetch(`${API_URL}/assets/${assetId}/video-token`, {
+      headers: token ? { authorization: `Bearer ${token}` } : {}
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("token");
+        }
+        return (await response.json()) as { url: string };
+      })
+      .then((data) => {
+        if (!cancelled) {
+          setState({ url: data.url, loading: false, error: false });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setState({ url: null, loading: false, error: true });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [assetId, token]);
+  return state;
 }
 
 function lessonKindLabel(lesson: { kind: string; videoUrl: string | null }) {
@@ -2484,6 +3002,17 @@ function sectionTitle(view: View) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatInboxDate(value: string | null): string {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function downloadBlob(blob: Blob, filename: string) {

@@ -12,6 +12,7 @@ import {
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
 import { emitStudentNotification } from "../lib/notifications.js";
 import { awardQuizPassedBadges } from "../lib/gamification.js";
+import { computeCourseLock, computeExamLocked, type CoursePrereq } from "../lib/gating.js";
 
 const startAttemptSchema = z.object({
   quizId: z.string().min(1)
@@ -55,6 +56,25 @@ export async function registerQuizRoutes(server: FastifyInstance) {
 
     if (!canUseQuiz(auth, quiz.course.teacherId, quiz.course.enrollments.length > 0)) {
       return reply.code(403).send({ error: "Quiz access denied" });
+    }
+
+    // Bloqueo duro (Fase C): el estudiante no puede presentar el examen si el
+    // curso esta bloqueado por prerrequisitos o si aun no completo TODAS las
+    // lecciones del curso. Docentes/admin quedan exentos (preview/autoria). El
+    // rechazo es 409 y ocurre antes de crear/retomar cualquier intento.
+    if (!isTeacherOrAdmin(auth)) {
+      const [prerequisites, completedCourseIds, totalLessons, completedLessons] = await Promise.all([
+        coursePrerequisites(quiz.courseId),
+        completedCourseIdSet(auth.userId),
+        getPrisma().lesson.count({ where: { courseId: quiz.courseId } }),
+        getPrisma().lessonProgress.count({
+          where: { userId: auth.userId, lesson: { courseId: quiz.courseId }, completedAt: { not: null } }
+        })
+      ]);
+      const gate = resolveExamStartGate({ prerequisites, completedCourseIds, totalLessons, completedLessons });
+      if (!gate.allowed) {
+        return reply.code(409).send({ error: gate.message });
+      }
     }
 
     const activeAttempt = await getPrisma().quizAttempt.findFirst({
@@ -334,6 +354,48 @@ async function loadQuizForAttempt(quizId: string, userId: string) {
       }
     }
   });
+}
+
+/**
+ * Enforcement (bloqueo duro, Fase C) para iniciar el intento de examen. El
+ * examen queda bloqueado si el curso tiene prerrequisitos sin completar o si el
+ * estudiante no ha completado TODAS las lecciones del curso. Pura y total para
+ * poder probarla sin base de datos.
+ */
+export function resolveExamStartGate(input: {
+  prerequisites: CoursePrereq[];
+  completedCourseIds: Set<string>;
+  totalLessons: number;
+  completedLessons: number;
+}): { allowed: boolean; message?: string } {
+  const lock = computeCourseLock(input.prerequisites, input.completedCourseIds);
+  if (lock.locked) {
+    return { allowed: false, message: `Este curso está bloqueado: ${lock.lockReason}` };
+  }
+
+  if (computeExamLocked(input.totalLessons, input.completedLessons)) {
+    return { allowed: false, message: "Completa todas las lecciones antes de presentar el examen." };
+  }
+
+  return { allowed: true };
+}
+
+/** Prerrequisitos del curso, mapeados a la forma que consume computeCourseLock. */
+async function coursePrerequisites(courseId: string): Promise<CoursePrereq[]> {
+  const rows = await getPrisma().coursePrerequisite.findMany({
+    where: { courseId },
+    include: { requires: { select: { id: true, title: true } } }
+  });
+  return rows.map((row) => ({ requiresId: row.requiresId, requiresTitle: row.requires.title }));
+}
+
+/** Conjunto de courseId que el usuario ya COMPLETO (inscripcion COMPLETED). */
+async function completedCourseIdSet(userId: string): Promise<Set<string>> {
+  const rows = await getPrisma().enrollment.findMany({
+    where: { userId, status: "COMPLETED" },
+    select: { courseId: true }
+  });
+  return new Set(rows.map((row) => row.courseId));
 }
 
 function canUseQuiz(auth: AuthContext, teacherId: string | null, isEnrolled: boolean) {

@@ -3489,6 +3489,293 @@ textarea.inp { min-height: 96px; padding: 10px 12px; line-height: var(--lh-norma
 }
 
 /* ============================================================================
+   OLA 2 · GUARDIA — candados, examen paso a paso, campana, diplomas, racha.
+   Todo dark-first, reutilizando tokens (--ink/--fg/--line/--tsc-red) del sistema.
+   ============================================================================ */
+
+/* ─── Racha diaria en la tab Rango ────────────────────────────────────────── */
+.rank-streak {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: var(--s-2);
+  color: var(--fg-2);
+}
+.rank-streak svg {
+  width: 18px;
+  height: 18px;
+  align-self: center;
+  color: var(--tsc-red-bright);
+}
+.rank-streak strong {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--fg-strong);
+}
+.rank-streak .mono-label { color: var(--fg-3); }
+
+/* ─── Pills de estado adicionales (candado / vencido) ─────────────────────── */
+.pill--locked {
+  border-color: var(--line-red);
+  color: var(--fg-strong);
+  background: rgba(168, 36, 49, 0.14);
+}
+.pill--locked::before { background: var(--tsc-red-bright); box-shadow: 0 0 0 3px rgba(198, 42, 56, 0.22); }
+.pill--expired::before { background: var(--watch); }
+
+/* ─── Candados en el detalle del curso (lecciones / examen) ───────────────── */
+.lesson-row.locked,
+.quiz-row.locked,
+.quiz-row.exam-locked {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.lesson-row.locked svg,
+.quiz-row.exam-locked svg { color: var(--fg-3); }
+.lesson-row.locked small { color: var(--muted); font-size: 12px; text-align: right; }
+.lesson-row.done svg { color: var(--ok); }
+.quiz-row.exam-locked {
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+}
+.exam-locked-body { display: grid; gap: 2px; min-width: 0; }
+.exam-locked-body span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exam-locked-body small { color: var(--muted); font-size: 12px; white-space: normal; line-height: 1.35; }
+
+/* ─── Curso bloqueado en el catálogo ──────────────────────────────────────── */
+.guard-course-card.locked {
+  opacity: 0.92;
+  cursor: not-allowed;
+  border-color: var(--line-red);
+}
+.course-card-cover-wrap { position: relative; width: 92px; height: 92px; }
+.course-lock-badge {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: rgba(9, 15, 18, 0.6);
+}
+.course-lock-badge svg { width: 26px; height: 26px; color: #fff; }
+.course-lock-reason {
+  margin: 2px 0 0;
+  font-size: var(--fs-caption);
+  color: var(--fg-2);
+  line-height: 1.35;
+}
+
+/* ─── Examen paso a paso (stepper) ────────────────────────────────────────── */
+.quiz-stepper { display: flex; flex-direction: column; gap: var(--s-3); }
+.timer { gap: 5px; }
+.timer svg { width: 13px; height: 13px; }
+.quiz-progress-segments {
+  display: flex;
+  gap: 5px;
+  margin: var(--s-1) 0 var(--s-2);
+}
+.quiz-seg {
+  flex: 1 1 0;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.1);
+  transition: background var(--t-fast) var(--ease-out);
+}
+.quiz-seg.visited,
+.quiz-seg.answered { background: var(--ok); }
+.quiz-seg.current { background: linear-gradient(90deg, var(--tsc-red), var(--tsc-red-bright)); }
+.quiz-step-validation {
+  margin: 0;
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+  color: var(--tsc-red-on-dark);
+}
+.quiz-stepper-nav {
+  display: flex;
+  gap: var(--s-2);
+  justify-content: space-between;
+  margin-top: var(--s-1);
+}
+.quiz-stepper-nav .primary-button,
+.quiz-stepper-nav .secondary-button { flex: 1 1 0; justify-content: center; }
+
+/* ─── Reproductor de video subido (asset con token) ───────────────────────── */
+.video-loading {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--fg-3);
+  font-size: var(--fs-body-sm);
+}
+
+/* ─── Campana + badge de no-leídos en el topbar ───────────────────────────── */
+.guard-topbar-actions { display: inline-flex; align-items: center; gap: var(--s-2); }
+.guard-bell {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line-1);
+  color: var(--fg-1);
+  transition: border-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.guard-bell:hover { border-color: var(--line-red); color: var(--tsc-red-on-dark); }
+.guard-bell svg { width: 19px; height: 19px; }
+.guard-bell-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--tsc-red);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  border: 2px solid var(--ink-800);
+}
+
+/* ─── Panel de la campana (novedades) ─────────────────────────────────────── */
+.guard-inbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  background: rgba(9, 15, 18, 0.82);
+  backdrop-filter: blur(4px);
+  animation: guard-fade var(--t-fast) var(--ease-out);
+}
+.guard-inbox-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 430px;
+  background: var(--ink-700);
+  border-left: 1px solid var(--line-1);
+  border-right: 1px solid var(--line-1);
+  animation: guard-pop 260ms var(--ease-out);
+}
+.guard-inbox-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s-4);
+  background: color-mix(in srgb, var(--ink-800) 92%, transparent);
+  border-bottom: 1px solid var(--line-1);
+}
+.guard-inbox-title { display: inline-flex; align-items: center; gap: var(--s-2); }
+.guard-inbox-title svg { width: 20px; height: 20px; color: var(--tsc-red-on-dark); }
+.guard-inbox-title h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-h6);
+  text-transform: uppercase;
+  color: var(--fg-strong);
+}
+.guard-inbox-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+.guard-inbox-section { display: grid; gap: var(--s-2); }
+.guard-inbox-eyebrow { color: var(--fg-2); }
+.guard-inbox-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+.guard-inbox-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border-radius: var(--r-lg);
+  background: var(--ink-600);
+  border: 1px solid var(--line-1);
+}
+.guard-inbox-item.unread { border-color: var(--line-red); }
+.guard-inbox-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+.guard-inbox-item.unread .guard-inbox-dot {
+  background: var(--tsc-red-bright);
+  box-shadow: 0 0 0 3px rgba(198, 42, 56, 0.22);
+}
+.guard-inbox-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md);
+  background: rgba(168, 36, 49, 0.14);
+  border: 1px solid var(--line-red);
+}
+.guard-inbox-icon svg { width: 16px; height: 16px; color: var(--tsc-red-on-dark); }
+.guard-inbox-item-body { display: grid; gap: 3px; min-width: 0; }
+.guard-inbox-item-body strong {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-body-sm);
+  color: var(--fg-strong);
+}
+.guard-inbox-item-body p { margin: 0; font-size: var(--fs-body-sm); color: var(--fg-2); line-height: 1.4; }
+.guard-inbox-item-body time,
+.guard-inbox-meta { color: var(--fg-3); }
+
+/* ─── Parrilla de diplomas (tab Perfil) ───────────────────────────────────── */
+.guard-diplomas { display: grid; gap: var(--s-3); margin-top: var(--s-4); }
+.guard-diplomas .guard-block-head > svg { width: 20px; height: 20px; color: var(--tsc-red-on-dark); }
+.guard-diploma-grid { display: grid; gap: var(--s-3); }
+.guard-diploma-card { display: grid; gap: var(--s-3); padding: var(--s-4); }
+.guard-diploma-info { display: flex; align-items: center; gap: var(--s-3); }
+.guard-diploma-seal {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-md);
+  background: rgba(168, 36, 49, 0.16);
+  border: 1px solid var(--line-red);
+}
+.guard-diploma-seal svg { width: 22px; height: 22px; color: var(--tsc-red-on-dark); }
+.guard-diploma-meta { display: grid; gap: 2px; min-width: 0; }
+.guard-diploma-meta strong {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-body);
+  line-height: 1.12;
+  color: var(--fg-strong);
+}
+.guard-diploma-meta .mono-label { color: var(--fg-2); }
+.guard-diploma-meta small { color: var(--fg-3); font-size: var(--fs-caption); }
+.guard-diploma-actions { display: flex; gap: var(--s-2); }
+.guard-diploma-actions .btn { flex: 1 1 0; justify-content: center; gap: 6px; }
+.guard-diploma-actions .btn svg { width: 15px; height: 15px; }
+
+/* ============================================================================
    CONSOLA DEL INSTRUCTOR (rol TEACHER puro) — cáscara de marca, SIN sidebar.
    Lienzo ink command-center, ancho de escritorio. Dark-first; el papel claro se
    resuelve solo por los tokens (--ink/--fg/--line/--bg) que ya invierten en

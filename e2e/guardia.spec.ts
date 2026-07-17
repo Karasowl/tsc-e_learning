@@ -1,4 +1,5 @@
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
+import { execSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -22,9 +23,12 @@ const QA_SHOTS =
   "/tmp/claude-1000/-home-karasowl-dev-tsc-e-learning/64f53584-2202-4228-a0bd-dd9736a5f90c/scratchpad/qa-guardia";
 // Evidencia de la Ola 1 para QA visual (persiste en el repo, ignorada por git).
 const OLA1_SHOTS = join(__dirname, "..", "tmp-qa", "ola1");
+// Evidencia de la Ola 2 · Fase C (gating del guardia) para QA visual.
+const OLA2C_SHOTS = join(__dirname, "..", "tmp-qa", "ola2-c");
 
 mkdirSync(QA_SHOTS, { recursive: true });
 mkdirSync(OLA1_SHOTS, { recursive: true });
+mkdirSync(OLA2C_SHOTS, { recursive: true });
 
 function shot(name: string) {
   return join(QA_SHOTS, name);
@@ -32,6 +36,10 @@ function shot(name: string) {
 
 function ola1Shot(name: string) {
   return join(OLA1_SHOTS, name);
+}
+
+function ola2cShot(name: string) {
+  return join(OLA2C_SHOTS, name);
 }
 
 async function waitForApi(request: APIRequestContext) {
@@ -67,6 +75,20 @@ async function loginGuardia(page: Page) {
 function goToTab(page: Page, name: "Cursos" | "Logros" | "Rango" | "Perfil") {
   return page.locator(".guard-tabbar").getByRole("button", { name }).dispatchEvent("click");
 }
+
+// Con el gating de la Fase C, varias pruebas completan lecciones/examen de
+// "Seguridad Intramuros" y dependen de que ese curso empiece en 0% (candados
+// visibles, examen bloqueado). Como corren en serie contra la MISMA base, cada
+// prueba restaura el baseline sembrado del guardia (Intramuros 0%, XP 450,
+// Custodia 66%, notificación sin leer) antes de ejecutarse. No toca el intento
+// SELLADO de Proteccion Ejecutiva del que dependen otros specs.
+function resetGuardiaBaseline() {
+  execSync("pnpm --filter @tsc-capacita/db run db:reset-guardia", { stdio: "ignore" });
+}
+
+test.beforeEach(() => {
+  resetGuardiaBaseline();
+});
 
 test.describe("guardia · cáscara móvil (390x844)", () => {
   test.use({ viewport: { width: 390, height: 844 } });
@@ -162,27 +184,48 @@ test.describe("guardia · cáscara móvil (390x844)", () => {
     await page.screenshot({ path: shot("06-rango-tras-xp.png"), fullPage: true });
   });
 
-  // G-01: tras ENVIAR un examen, la pantalla de resultado permanece visible y NO
-  // rebota a la Lección 1. Antes de la Ola 1, loadCourse reseteaba quizAttempt y la
-  // lección activa al refrescar, así que el resultado desaparecía al instante.
-  test("G-01: al enviar el examen, el resultado permanece (no rebota a la Lección 1)", async ({ page }) => {
+  // G-01 (reformada al flujo GATED de la Fase C): el examen de Intramuros nace
+  // BLOQUEADO (0% de lecciones). El guardia debe completar TODAS las lecciones en
+  // orden para desbloquearlo; luego responde el stepper, envía y la pantalla de
+  // resultado PERMANECE visible (no rebota a la Lección 1). El bloqueo duro (409)
+  // convierte el intento directo del examen en imposible, así que la prueba recorre
+  // el camino real: desbloquear → responder → enviar → resultado persistente.
+  test("G-01: examen gated · desbloquear, enviar y el resultado permanece (no rebota)", async ({ page }) => {
     await loginGuardia(page);
     await goToTab(page, "Cursos");
     await page.getByRole("button", { name: "Abrir curso Seguridad Intramuros" }).click();
     await expect(page.locator(".guard-course-detail")).toBeVisible({ timeout: 20_000 });
 
-    // Abrir el examen del curso (el guardia está inscrito; Intramuros 0%).
+    // El examen arranca BLOQUEADO: fila candado + copy de desbloqueo, no clicable.
+    const examLockedRow = page.locator(".quiz-row.exam-locked");
+    await expect(examLockedRow).toBeVisible({ timeout: 20_000 });
+    await expect(examLockedRow).toContainText(
+      "Completa todas las lecciones para desbloquear el examen"
+    );
+
+    // Completar TODAS las lecciones en orden (cada una desbloquea la siguiente).
+    await completeAllLessonsInOrder(page);
+
+    // El examen se DESBLOQUEA: la fila candado desaparece y aparece la fila clicable.
+    await expect(page.locator(".quiz-row.exam-locked")).toHaveCount(0);
     const examRow = page.locator(".quiz-row", { hasText: "Examen final de Seguridad Intramuros" });
     await expect(examRow).toBeVisible({ timeout: 20_000 });
     await examRow.click();
 
-    // Se monta el panel de evaluación con el CTA de envío.
-    await expect(page.getByRole("heading", { name: "Evaluación" })).toBeVisible({ timeout: 20_000 });
+    // Stepper: header "Pregunta 1 de N" (no un volcado de todas las preguntas).
+    await expect(page.locator(".quiz-stepper")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: /^Pregunta 1 de \d+$/ })).toBeVisible();
+    await expect(page.locator(".quiz-progress-segments")).toBeVisible();
+    await page.screenshot({ path: ola2cShot("examen-stepper-pregunta-1.png"), fullPage: true });
+
+    // Avanzar el stepper respondiendo cada pregunta (la 2ª opción es incorrecta en
+    // ambas: fuerza un "No aprobado" determinista, con Reintentar + Volver visibles).
+    await answerWrongAndAdvance(page);
+
+    // Enviar la evaluación y esperar la respuesta del submit (tras la cual corre
+    // loadCourse con preserveAttempt, que NO debe borrar el resultado).
     const submit = page.getByRole("button", { name: "Enviar evaluación" });
     await expect(submit).toBeVisible();
-
-    // Enviar sin responder ⇒ 0% ⇒ "No aprobado". Esperamos la respuesta del submit
-    // (tras la cual corre loadCourse con preserveAttempt) para observar el estado final.
     const submitResp = page.waitForResponse(
       (r) => r.url().includes("/submit") && r.request().method() === "POST"
     );
@@ -200,12 +243,15 @@ test.describe("guardia · cáscara móvil (390x844)", () => {
     await expect(page.getByRole("button", { name: "Volver al curso" })).toBeVisible();
     // Anti-rebote: NO estamos en una lección (no hay CTA de completar lección).
     await expect(page.getByRole("button", { name: "Marcar completada" })).toHaveCount(0);
+    await page.screenshot({ path: ola2cShot("examen-resultado-persistente.png"), fullPage: true });
     await page.screenshot({ path: ola1Shot("guardia-examen-resultado-persistente.png"), fullPage: true });
   });
 
-  // G-06: completar una lección que NO es la primera deja al usuario en esa lección
-  // (la activa se conserva si sigue existiendo tras recargar), no en la Lección 1.
-  test("G-06: completar una lección no-primera deja al usuario en ESA lección", async ({ page }) => {
+  // G-06 (reformada al flujo GATED de la Fase C): la Lección 2 NACE bloqueada
+  // (secuencial). Al completar la Lección 1 (primera, disponible) la 2 se desbloquea;
+  // se navega a ella, se completa, y el usuario SIGUE en la Lección 2 (no rebota a la
+  // 1). Mantiene el espíritu de G-06 (la lección activa se conserva) dentro del gating.
+  test("G-06: gated · completar la Lección 1 desbloquea la 2 y completarla te deja en ELLA", async ({ page }) => {
     const firstTitle = "Introduccion a Seguridad Intramuros";
     const targetTitle = "Video demostrativo: Seguridad Intramuros";
 
@@ -214,20 +260,37 @@ test.describe("guardia · cáscara móvil (390x844)", () => {
     await page.getByRole("button", { name: "Abrir curso Seguridad Intramuros" }).click();
     await expect(page.locator(".guard-course-detail")).toBeVisible({ timeout: 20_000 });
 
-    // Al abrir, la lección activa es la primera. Navegar a una lección posterior.
+    // La Lección 2 arranca BLOQUEADA (secuencial): no se puede saltar a ella.
+    await expect(page.locator(".lesson-row.locked", { hasText: targetTitle })).toBeVisible({
+      timeout: 20_000
+    });
+
+    // La Lección 1 (primera) está activa y disponible: completarla.
+    await expect(page.locator(".lesson-row.active")).toContainText(firstTitle);
+    const complete1 = page.getByRole("button", { name: "Marcar completada" });
+    await expect(complete1).toBeVisible({ timeout: 20_000 });
+    const resp1 = page.waitForResponse(
+      (r) => r.url().includes("/complete") && r.request().method() === "POST"
+    );
+    await complete1.click();
+    await resp1;
+    await page.waitForTimeout(1500);
+
+    // La Lección 2 SE DESBLOQUEA (deja de ser .lesson-row.locked) y es clicable.
+    await expect(page.locator(".lesson-row.locked", { hasText: targetTitle })).toHaveCount(0);
     const targetRow = page.locator(".lesson-row", { hasText: targetTitle });
     await expect(targetRow).toBeVisible({ timeout: 20_000 });
     await targetRow.click();
     await expect(page.locator(".lesson-row.active")).toContainText(targetTitle);
 
-    // Completar esa lección (no la primera).
-    const complete = page.getByRole("button", { name: "Marcar completada" });
-    await expect(complete).toBeVisible({ timeout: 20_000 });
-    const completeResp = page.waitForResponse(
+    // Completar la Lección 2 (no la primera).
+    const complete2 = page.getByRole("button", { name: "Marcar completada" });
+    await expect(complete2).toBeVisible({ timeout: 20_000 });
+    const resp2 = page.waitForResponse(
       (r) => r.url().includes("/complete") && r.request().method() === "POST"
     );
-    await complete.click();
-    await completeResp;
+    await complete2.click();
+    await resp2;
     // Dejar asentar el loadCourse que refresca el temario tras completar.
     await page.waitForTimeout(1500);
 
@@ -237,5 +300,147 @@ test.describe("guardia · cáscara móvil (390x844)", () => {
     // Y quedó marcada como completada (el CTA pasó a "Completada").
     await expect(page.getByRole("button", { name: "Completada" })).toBeVisible();
     await page.screenshot({ path: ola1Shot("guardia-completar-leccion-no-primera.png"), fullPage: true });
+    await page.screenshot({ path: ola2cShot("leccion-2-desbloqueada-completada.png"), fullPage: true });
+  });
+});
+
+// Helper: completa las lecciones del curso abierto EN ORDEN. Cada lección
+// desbloquea la siguiente (gating secuencial), así que se resuelven de una en una.
+// Antes de completar, la fila destino debe estar disponible (no .locked).
+async function completeLessonByTitle(page: Page, title: string) {
+  const row = page.locator(".lesson-row:not(.locked)", { hasText: title });
+  await expect(row).toBeVisible({ timeout: 20_000 });
+  await row.click();
+  await expect(page.locator(".lesson-row.active")).toContainText(title);
+  const complete = page.getByRole("button", { name: "Marcar completada" });
+  await expect(complete).toBeVisible({ timeout: 20_000 });
+  const resp = page.waitForResponse(
+    (r) => r.url().includes("/complete") && r.request().method() === "POST"
+  );
+  await complete.click();
+  await resp;
+  await page.waitForTimeout(1200);
+  await expect(page.getByRole("button", { name: "Completada" })).toBeVisible();
+}
+
+// Completa las 3 lecciones de "Seguridad Intramuros" en orden de lectura para
+// desbloquear el examen.
+async function completeAllLessonsInOrder(page: Page) {
+  await completeLessonByTitle(page, "Introduccion a Seguridad Intramuros");
+  await completeLessonByTitle(page, "Video demostrativo: Seguridad Intramuros");
+  await completeLessonByTitle(page, "Protocolo operativo de Seguridad Intramuros");
+}
+
+// Recorre el stepper del examen respondiendo cada pregunta con una opción
+// INCORRECTA (se excluye la respuesta correcta por texto, así es determinista
+// aunque el orden de opciones cambie), pulsando "Siguiente" hasta la última
+// pregunta (donde queda "Enviar evaluación"). Fuerza un "No aprobado" reproducible.
+async function answerWrongAndAdvance(page: Page) {
+  // Respuestas correctas del examen de Intramuros (seed): se evitan a propósito.
+  const CORRECT = ["Autorizar y registrar el ingreso de personas y vehiculos", "Verdadero"];
+  for (let guard = 0; guard < 20; guard++) {
+    const options = page.locator(".question-block .option-row");
+    await expect(options.first()).toBeVisible({ timeout: 20_000 });
+    const count = await options.count();
+    let clicked = false;
+    for (let i = 0; i < count; i++) {
+      const text = (await options.nth(i).innerText()).trim();
+      if (!CORRECT.some((c) => text.includes(c))) {
+        await options.nth(i).click();
+        clicked = true;
+        break;
+      }
+    }
+    if (!clicked) {
+      await options.first().click();
+    }
+    const next = page.getByRole("button", { name: "Siguiente" });
+    if (await next.isVisible().catch(() => false)) {
+      await next.click();
+      continue;
+    }
+    // Sin "Siguiente" => estamos en la última pregunta (queda "Enviar evaluación").
+    return;
+  }
+  throw new Error("El stepper del examen no alcanzó la última pregunta.");
+}
+
+// ─── Fase C (Ola 2): cobertura enfocada del gating del guardia ───────────────
+// Cada prueba es de lectura sobre el baseline sembrado (reset por global-setup),
+// salvo el examen (G-01) y G-06 que ya viven arriba. Capturas en tmp-qa/ola2-c/.
+test.describe("guardia · Fase C · gating (390x844)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("bloqueo secuencial y examen bloqueado visibles en Intramuros (0%)", async ({ page }) => {
+    await loginGuardia(page);
+    await goToTab(page, "Cursos");
+    await expect(page.getByRole("button", { name: "Abrir curso Seguridad Intramuros" })).toBeVisible({
+      timeout: 20_000
+    });
+    // Evidencia del catálogo del guardia (3 cursos reales).
+    await page.screenshot({ path: ola2cShot("catalogo.png"), fullPage: true });
+
+    await page.getByRole("button", { name: "Abrir curso Seguridad Intramuros" }).click();
+    await expect(page.locator(".guard-course-detail")).toBeVisible({ timeout: 20_000 });
+
+    // (a) Bloqueo SECUENCIAL: la Lección 2 aparece bloqueada (Lock + "Bloqueada")
+    // porque la Lección 1 aún no está completa. La primera NO está bloqueada.
+    const lockedLesson = page.locator(".lesson-row.locked", {
+      hasText: "Video demostrativo: Seguridad Intramuros"
+    });
+    await expect(lockedLesson).toBeVisible({ timeout: 20_000 });
+    await expect(lockedLesson).toContainText("Bloqueada");
+    await expect(
+      page.locator(".lesson-row.locked", { hasText: "Introduccion a Seguridad Intramuros" })
+    ).toHaveCount(0);
+
+    // (b) Examen BLOQUEADO: fila candado + copy de desbloqueo (0% de lecciones).
+    const examLocked = page.locator(".quiz-row.exam-locked");
+    await expect(examLocked).toBeVisible({ timeout: 20_000 });
+    await expect(examLocked).toContainText(
+      "Completa todas las lecciones para desbloquear el examen"
+    );
+    await page.screenshot({ path: ola2cShot("detalle-candados.png"), fullPage: true });
+  });
+
+  test("parrilla de diplomas del guardia en Perfil (Ver diploma / Descargar PDF)", async ({ page }) => {
+    await loginGuardia(page);
+    await goToTab(page, "Perfil");
+    await expect(page.getByRole("heading", { name: "Editar perfil" })).toBeVisible({ timeout: 20_000 });
+
+    // (c) Sección de diplomas: al menos el diploma de Proteccion Ejecutiva de Marcos.
+    const diplomas = page.locator(".guard-diplomas");
+    await expect(diplomas).toBeVisible({ timeout: 20_000 });
+    const card = page.locator(".guard-diploma-card", { hasText: "Proteccion Ejecutiva" });
+    await expect(card).toBeVisible();
+    await expect(card.getByRole("button", { name: "Ver diploma" })).toBeVisible();
+    await expect(card.getByRole("button", { name: "Descargar PDF" })).toBeVisible();
+    await card.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: ola2cShot("perfil-diplomas.png"), fullPage: true });
+  });
+
+  test("racha visible en Rango (días consecutivos)", async ({ page }) => {
+    await loginGuardia(page);
+    // El aterrizaje es la tab RANGO; la racha demo de Marcos es 3 días.
+    const streak = page.locator(".rank-streak");
+    await expect(streak).toBeVisible({ timeout: 20_000 });
+    await expect(streak).toContainText("3 días");
+    await expect(streak).toContainText("DE RACHA");
+    await page.screenshot({ path: ola2cShot("rango-racha.png"), fullPage: true });
+  });
+
+  test("la campana abre el panel de novedades", async ({ page }) => {
+    await loginGuardia(page);
+    // (e) Badge de no-leídos (1 notificación sembrada) + campana clicable.
+    const bell = page.locator(".guard-bell");
+    await expect(bell).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".guard-bell-badge")).toBeVisible();
+
+    await bell.click();
+    const panel = page.locator(".guard-inbox-panel");
+    await expect(panel).toBeVisible({ timeout: 20_000 });
+    await expect(panel).toContainText("Novedades");
+    await expect(panel).toContainText("Bienvenido a tu carrera del guardia");
+    await page.screenshot({ path: ola2cShot("campana-panel.png"), fullPage: true });
   });
 });
