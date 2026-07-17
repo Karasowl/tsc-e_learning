@@ -18,13 +18,16 @@ const questionIdParamSchema = z.object({
 
 const quizStatusSchema = z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]);
 
+// OPEN_ENDED is intentionally excluded: open answers can't be auto-graded, so
+// the product does not create them. Leaving it out of the accepted input types
+// makes both create and update reject OPEN_ENDED with a 400. The Prisma enum
+// still carries OPEN_ENDED so any imported/legacy question keeps rendering.
 const questionTypeSchema = z.enum([
   "SINGLE_CHOICE",
   "MULTIPLE_CHOICE",
   "TRUE_FALSE",
   "FILL_IN_THE_BLANK",
   "SHORT_TEXT",
-  "OPEN_ENDED",
   "MATCHING",
   "ORDERING"
 ]);

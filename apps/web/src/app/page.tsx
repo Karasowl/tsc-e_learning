@@ -516,14 +516,23 @@ export default function Home() {
     }
   }, []);
 
-  async function loadCourse(courseId: string) {
+  // preserveAttempt: se usa tras enviar un examen para NO borrar la pantalla de
+  // resultado (QuizResult) ni resetear los datos del examen mientras se refresca
+  // el temario/inscripción. Además, la lección activa se conserva si sigue
+  // existiendo tras recargar (G-06): solo cae a la primera cuando no hay una
+  // lección activa válida (p. ej. al abrir un curso distinto).
+  async function loadCourse(courseId: string, options?: { preserveAttempt?: boolean }) {
     setError(null);
     const payload = await api<{ course: CourseDetail }>(`/courses/${courseId}`);
     setSelectedCourse(payload.course);
-    const firstLesson = payload.course.modules.flatMap((module) => module.lessons)[0];
-    setActiveLessonId(firstLesson?.id ?? null);
-    setQuizAttempt(null);
-    setAnswers({});
+    const lessons = payload.course.modules.flatMap((module) => module.lessons);
+    setActiveLessonId((current) =>
+      current && lessons.some((lesson) => lesson.id === current) ? current : lessons[0]?.id ?? null
+    );
+    if (!options?.preserveAttempt) {
+      setQuizAttempt(null);
+      setAnswers({});
+    }
   }
 
   async function loadCertificates() {
@@ -661,7 +670,11 @@ export default function Home() {
         }
       });
       if (selectedCourse) {
-        await loadCourse(selectedCourse.id);
+        // Refresca temario/progreso e inscripción (para que aparezca el CTA de
+        // diploma si el curso quedó completo) SIN borrar el resultado recién
+        // enviado: QuizResult permanece hasta que el usuario pulse "Volver al
+        // curso". Reintentar sigue creando un intento nuevo.
+        await loadCourse(selectedCourse.id, { preserveAttempt: true });
       }
     } catch (submitError) {
       setError(errorMessage(submitError));
@@ -935,19 +948,49 @@ export default function Home() {
             )}
           </div>
 
-          {selectedCourse.enrollment?.status === "COMPLETED" ? (
-            <button
-              className="btn btn--brand guard-claim"
-              disabled={busy}
-              onClick={() => issueCertificate(selectedCourse.id)}
-              type="button"
-            >
-              <Award aria-hidden />
-              Reclamar diploma
-            </button>
-          ) : (selectedCourse.enrollment?.progressPercent ?? 0) >= 100 ? (
-            <p className="empty-state">Aprueba el examen del curso para obtener tu diploma.</p>
-          ) : null}
+          {(() => {
+            // Si el diploma ya fue emitido, el guardia lo abre y lo descarga aquí
+            // mismo (reutilizando openCertificate/downloadCertificatePdf) y el CTA
+            // deja de decir "Reclamar" en bucle. Si el curso está completo y aún no
+            // hay diploma, se reclama; si no, se guía a aprobar el examen.
+            const diploma = certificates.find((certificate) => certificate.course.id === selectedCourse.id);
+            if (diploma) {
+              return (
+                <div className="quiz-result-actions">
+                  <button className="btn btn--brand" disabled={busy} onClick={() => openCertificate(diploma.id)} type="button">
+                    <Award aria-hidden />
+                    Ver diploma
+                  </button>
+                  <button
+                    className="btn btn--ghost"
+                    disabled={busy}
+                    onClick={() => downloadCertificatePdf(diploma.id, diploma.folio)}
+                    type="button"
+                  >
+                    <Download aria-hidden />
+                    Descargar PDF
+                  </button>
+                </div>
+              );
+            }
+            if (selectedCourse.enrollment?.status === "COMPLETED") {
+              return (
+                <button
+                  className="btn btn--brand guard-claim"
+                  disabled={busy}
+                  onClick={() => issueCertificate(selectedCourse.id)}
+                  type="button"
+                >
+                  <Award aria-hidden />
+                  Reclamar diploma
+                </button>
+              );
+            }
+            if ((selectedCourse.enrollment?.progressPercent ?? 0) >= 100) {
+              return <p className="empty-state">Aprueba el examen del curso para obtener tu diploma.</p>;
+            }
+            return null;
+          })()}
 
           <CourseReviews token={token} courseId={selectedCourse.id} />
         </section>
@@ -2028,7 +2071,7 @@ function LessonPanel({
   hasPrev: boolean;
   hasNext: boolean;
 }) {
-  const embedUrl = youtubeEmbedUrl(lesson.videoUrl);
+  const media = resolveLessonMedia(lesson);
   return (
     <article className="content-surface">
       <div className="section-header">
@@ -2041,9 +2084,13 @@ function LessonPanel({
           {lesson.completed ? "Completada" : "Marcar completada"}
         </button>
       </div>
-      {embedUrl ? (
+      {media ? (
         <div className="video-frame">
-          <iframe allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowFullScreen src={embedUrl} title={lesson.title} />
+          {media.kind === "file" ? (
+            <video controls playsInline preload="metadata" src={media.src} style={{ display: "block", width: "100%", height: "100%" }} />
+          ) : (
+            <iframe allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowFullScreen src={media.src} title={lesson.title} />
+          )}
         </div>
       ) : null}
       {lesson.body ? <div className="lesson-body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(lesson.body) }} /> : null}
@@ -2320,6 +2367,45 @@ function youtubeEmbedUrl(url: string | null) {
   const watchMatch = url.match(/[?&]v=([^?&]+)/);
   const id = shortMatch?.[1] ?? watchMatch?.[1];
   return id ? `https://www.youtube.com/embed/${id}` : url;
+}
+
+function vimeoEmbedUrl(url: string): string | null {
+  // Acepta vimeo.com/ID y player.vimeo.com/video/ID.
+  const match = url.match(/vimeo\.com\/(?:video\/)?(\d+)/i);
+  return match?.[1] ? `https://player.vimeo.com/video/${match[1]}` : null;
+}
+
+// Resuelve el medio de la lección respetando videoProvider/videoEmbed:
+//  - archivo (MP4/webm/…) => reproductor nativo <video controls>;
+//  - embed explícito (videoEmbed) => se usa tal cual como src del iframe;
+//  - Vimeo => player.vimeo.com/video/ID;
+//  - en su defecto, YouTube (comportamiento previo intacto).
+function resolveLessonMedia(lesson: Lesson): { kind: "iframe" | "file"; src: string } | null {
+  const provider = (lesson.videoProvider ?? "").trim().toUpperCase();
+  const embed = (lesson.videoEmbed ?? "").trim();
+  const url = (lesson.videoUrl ?? "").trim();
+  const primary = embed || url;
+
+  const looksLikeFile = /\.(mp4|webm|ogg|ogv|mov|m4v)(\?|#|$)/i.test(primary);
+  const providerIsFile = ["FILE", "MP4", "UPLOAD", "HTML5", "VIDEO_FILE"].includes(provider);
+  if (primary && (providerIsFile || looksLikeFile)) {
+    return { kind: "file", src: primary };
+  }
+
+  if (embed) {
+    // El proveedor ya entregó una URL lista para incrustar.
+    return { kind: "iframe", src: embed };
+  }
+
+  if (provider === "VIMEO" || /vimeo\.com/i.test(url)) {
+    const vimeo = vimeoEmbedUrl(url);
+    if (vimeo) {
+      return { kind: "iframe", src: vimeo };
+    }
+  }
+
+  const youtube = youtubeEmbedUrl(url || null);
+  return youtube ? { kind: "iframe", src: youtube } : null;
 }
 
 function lessonKindLabel(lesson: { kind: string; videoUrl: string | null }) {

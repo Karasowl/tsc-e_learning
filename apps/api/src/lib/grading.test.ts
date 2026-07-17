@@ -98,4 +98,29 @@ describe("quiz grading", () => {
     ]);
     assert.equal(wrong.earnedMarks, 0);
   });
+
+  it("excludes an inherited OPEN_ENDED question from totalMarks so it cannot block passing", () => {
+    const withOpenEnded: GradingQuestion[] = [
+      {
+        id: "closed",
+        type: "TRUE_FALSE",
+        points: 1,
+        options: [
+          { id: "t", label: "Verdadero", value: "Verdadero", gapMatch: null, isCorrect: true, position: 0 },
+          { id: "f", label: "Falso", value: "Falso", gapMatch: null, isCorrect: false, position: 1 }
+        ]
+      },
+      // A legacy/imported open-ended question that can't be auto-graded.
+      { id: "legacy-open", type: "OPEN_ENDED", points: 3, options: [] }
+    ];
+
+    const result = gradeQuizSubmission(withOpenEnded, [{ questionId: "closed", selectedOptionIds: ["t"] }]);
+
+    // The 3-point OPEN_ENDED is out of the denominator, so answering the gradable
+    // question correctly is a perfect 100% — the inherited question can't hold a
+    // student below the passing threshold.
+    assert.equal(result.totalMarks, 1);
+    assert.equal(result.earnedMarks, 1);
+    assert.equal(result.scorePercent, 100);
+  });
 });

@@ -66,6 +66,7 @@ type DetailQuiz = {
   timeLimitSec: number | null;
   passingScorePercent: number | null;
   maxAttempts: number | null;
+  questionsOrder: string | null;
   questionCount: number;
 };
 
@@ -628,8 +629,8 @@ function PublishModal({
           </div>
           <h3>Publicar curso</h3>
           <p className="muted">
-            Publicar corta una nueva versión inmutable del curso. La versión sube y los intentos que los colaboradores ya
-            iniciaron conservan el sello de su versión anterior.
+            Publicar activa el curso y sube su versión. El temario puede seguir editándose. Cada intento se sella con el umbral
+            vigente al presentarlo, y los intentos ya iniciados por los colaboradores conservan el sello de su versión anterior.
           </p>
           <div className="tconsole-version-jump">
             <span className="pill tconsole-version">v{version}</span>
@@ -700,6 +701,7 @@ function QuizRuleCard({ token, quiz, onSaved }: { token: string; quiz: DetailQui
   const [passing, setPassing] = useState<string>(quiz.passingScorePercent != null ? String(quiz.passingScorePercent) : "");
   const [minutes, setMinutes] = useState<string>(quiz.timeLimitSec ? String(Math.round(quiz.timeLimitSec / 60)) : "");
   const [attempts, setAttempts] = useState<string>(quiz.maxAttempts != null ? String(quiz.maxAttempts) : "");
+  const [randomize, setRandomize] = useState<boolean>(quiz.questionsOrder === "rand");
   const [busy, setBusy] = useState(false);
 
   async function save() {
@@ -710,7 +712,8 @@ function QuizRuleCard({ token, quiz, onSaved }: { token: string; quiz: DetailQui
         body: JSON.stringify({
           passingScorePercent: passing ? Number(passing) : null,
           timeLimitSec: minutes ? Number(minutes) * 60 : null,
-          maxAttempts: attempts ? Number(attempts) : null
+          maxAttempts: attempts ? Number(attempts) : null,
+          questionsOrder: randomize ? "rand" : null
         })
       });
       toast.success("Reglas del examen guardadas.");
@@ -761,6 +764,10 @@ function QuizRuleCard({ token, quiz, onSaved }: { token: string; quiz: DetailQui
           />
         </label>
       </div>
+      <label className="inline-radio tconsole-rule-random">
+        <input type="checkbox" checked={randomize} onChange={(event) => setRandomize(event.target.checked)} />
+        <span>Aleatorizar preguntas</span>
+      </label>
       <button className="btn btn--dark tconsole-rule-save" type="button" disabled={busy} onClick={() => void save()}>
         <Save aria-hidden /> Guardar reglas
       </button>
@@ -778,8 +785,11 @@ function ResultadosTab({ token, courseId }: { token: string; courseId: string })
     setBusy(true);
     setError(null);
     try {
-      const data = await authFetch<{ rows: ReportRow[] }>(token, "/reports/students");
-      setRows(data.rows.filter((row) => row.courseId === courseId));
+      // Pasamos el courseId al servidor: el reporte del dueño incluye su curso
+      // aunque siga en borrador. Sin filtro en cliente.
+      const params = new URLSearchParams({ courseId });
+      const data = await authFetch<{ rows: ReportRow[] }>(token, `/reports/students?${params.toString()}`);
+      setRows(data.rows);
     } catch (loadError) {
       setError(errorText(loadError));
     } finally {

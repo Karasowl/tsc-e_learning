@@ -16,10 +16,12 @@ import {
   DEFAULT_CERTIFICATE_BACKGROUND_PATH
 } from "../lib/certificate-pdf.js";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
+import { emitStudentNotification } from "../lib/notifications.js";
 import {
+  LEDGER_SOURCE,
   XP_CERTIFICATE_ISSUED,
   detectAscension,
-  grantXp,
+  ledgerSourceId,
   rankInfo,
   totalXp
 } from "../lib/gamification.js";
@@ -127,45 +129,108 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
     const issuedAt = new Date();
     const folio = certificateFolio(auth.userId, course.id, issuedAt);
     const verificationCode = certificateVerificationCode(auth.userId, course.id, issuedAt);
-    const certificate = await getPrisma().certificate.create({
-      data: {
-        userId: auth.userId,
-        courseId: course.id,
-        templateId: course.templateLinks[0]?.templateId ?? null,
-        status: "ISSUED",
-        folio,
-        verificationCode,
-        pdfStorageKey: certificateStorageKey(folio),
-        issuedAt
-      },
-      include: {
-        user: { select: { id: true, displayName: true, email: true } },
-        course: { select: { id: true, title: true, slug: true, teacherId: true } }
+    const templateId = course.templateLinks[0]?.templateId ?? null;
+    const certInclude = {
+      user: { select: { id: true, displayName: true, email: true } },
+      course: { select: { id: true, title: true, slug: true, teacherId: true } }
+    } satisfies Prisma.CertificateInclude;
+
+    try {
+      // Emisión atómica: el certificado, su notificación (log + correo al alumno si
+      // tiene email real) y el XP del diploma se crean en una sola transacción, de
+      // modo que un diploma real SIEMPRE queda con su evento de XP (no hay ventana
+      // de fallo entre crear el cert y otorgar el XP).
+      const { certificate, xpDelta, xpTotal } = await getPrisma().$transaction(async (tx) => {
+        const created = await tx.certificate.create({
+          data: {
+            userId: auth.userId,
+            courseId: course.id,
+            templateId,
+            status: "ISSUED",
+            folio,
+            verificationCode,
+            pdfStorageKey: certificateStorageKey(folio),
+            issuedAt
+          },
+          include: certInclude
+        });
+
+        // Incluye al alumno (si tiene email real) y a los destinatarios de reglas;
+        // crea el log aunque no exista ninguna regla.
+        await emitStudentNotification(
+          {
+            eventType: "CERTIFICATE_ISSUED",
+            userId: auth.userId,
+            courseId: course.id,
+            payload: {
+              certificateId: created.id,
+              folio: created.folio,
+              verificationCode: created.verificationCode
+            }
+          },
+          tx
+        );
+
+        // XP +240 una sola vez (clave idempotente CERT:<courseId>). find-then-create
+        // dentro de la tx: un P2002 capturado abortaría la transacción en Postgres,
+        // así que comprobamos primero. Como el @@unique([userId, courseId]) del cert
+        // serializa las emisiones, aquí no hay competencia por este evento.
+        const xpSourceId = ledgerSourceId(auth.userId, `CERT:${course.id}`);
+        const existingXp = await tx.achievementEvent.findUnique({
+          where: { sourceSystem_sourceId: { sourceSystem: LEDGER_SOURCE, sourceId: xpSourceId } }
+        });
+        let delta = 0;
+        if (!existingXp) {
+          await tx.achievementEvent.create({
+            data: {
+              userId: auth.userId,
+              title: `Diploma emitido: ${course.title}`,
+              points: XP_CERTIFICATE_ISSUED,
+              pointsType: "certificate",
+              occurredAt: issuedAt,
+              sourceSystem: LEDGER_SOURCE,
+              sourceId: xpSourceId
+            }
+          });
+          delta = XP_CERTIFICATE_ISSUED;
+        }
+
+        const total = await totalXp(tx, auth.userId);
+        return { certificate: created, xpDelta: delta, xpTotal: total };
+      });
+
+      const ascension = detectAscension(xpTotal - xpDelta, xpTotal);
+      return reply.code(201).send({
+        certificate: serializeCertificate(certificate),
+        gamification: {
+          xpDelta,
+          xpTotal,
+          ascended: ascension.ascended,
+          rankName: ascension.rankName
+        }
+      });
+    } catch (error) {
+      // Emisión concurrente: otro request ya creó el diploma y chocamos con el
+      // @@unique. No es un 500: devolvemos el existente. El ganador ya otorgó el XP
+      // dentro de su propia transacción atómica, así que aquí xpDelta = 0.
+      if (isUniqueViolation(error)) {
+        const certificate = await getPrisma().certificate.findUniqueOrThrow({
+          where: { userId_courseId: { userId: auth.userId, courseId: course.id } },
+          include: certInclude
+        });
+        const xpTotal = await totalXp(getPrisma(), auth.userId);
+        return {
+          certificate: serializeCertificate(certificate),
+          gamification: {
+            xpDelta: 0,
+            xpTotal,
+            ascended: false,
+            rankName: rankInfo(xpTotal).name
+          }
+        };
       }
-    });
-
-    await logCertificateIssued(certificate);
-
-    // XP real por diploma emitido (+240), idempotente por curso (CERT:<courseId>).
-    const grant = await grantXp(getPrisma(), {
-      userId: auth.userId,
-      key: `CERT:${course.id}`,
-      points: XP_CERTIFICATE_ISSUED,
-      title: `Diploma emitido: ${course.title}`,
-      pointsType: "certificate",
-      occurredAt: issuedAt
-    });
-    const ascension = detectAscension(grant.xpTotal - grant.xpDelta, grant.xpTotal);
-
-    return reply.code(201).send({
-      certificate: serializeCertificate(certificate),
-      gamification: {
-        xpDelta: grant.xpDelta,
-        xpTotal: grant.xpTotal,
-        ascended: ascension.ascended,
-        rankName: ascension.rankName
-      }
-    });
+      throw error;
+    }
   });
 
   server.get("/certificates/:certificateId/html", async (request, reply) => {
@@ -322,38 +387,14 @@ function canReadCertificate(auth: AuthContext, userId: string, teacherId: string
   return isAdmin(auth) || auth.userId === userId || (auth.roles.includes("TEACHER") && teacherId === auth.userId);
 }
 
-async function logCertificateIssued(certificate: {
-  id: string;
-  userId: string;
-  courseId: string;
-  folio: string;
-  verificationCode: string;
-}) {
-  const rules = await getPrisma().notificationRule.findMany({
-    where: {
-      eventType: "CERTIFICATE_ISSUED",
-      enabled: true
-    }
-  });
-
-  await Promise.all(
-    rules.map((rule) =>
-      getPrisma().notificationLog.create({
-        data: {
-          eventType: "CERTIFICATE_ISSUED",
-          userId: certificate.userId,
-          courseId: certificate.courseId,
-          payload: {
-            ruleId: rule.id,
-            certificateId: certificate.id,
-            folio: certificate.folio,
-            verificationCode: certificate.verificationCode
-          },
-          sentTo: rule.recipients,
-          status: "PENDING"
-        }
-      })
-    )
+// Prisma unique-constraint violation. Here it can only come from Certificate's
+// @@unique (userId+courseId, or the day-derived folio for the same user+course),
+// meaning "already issued" — handled as an idempotent success, never a 500.
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: string }).code === "P2002"
   );
 }
 

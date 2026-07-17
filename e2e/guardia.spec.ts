@@ -20,11 +20,18 @@ const GUARDIA = "guardia@tsc.local";
 // Capturas del QA del guardia (ruta indicada por la unidad).
 const QA_SHOTS =
   "/tmp/claude-1000/-home-karasowl-dev-tsc-e-learning/64f53584-2202-4228-a0bd-dd9736a5f90c/scratchpad/qa-guardia";
+// Evidencia de la Ola 1 para QA visual (persiste en el repo, ignorada por git).
+const OLA1_SHOTS = join(__dirname, "..", "tmp-qa", "ola1");
 
 mkdirSync(QA_SHOTS, { recursive: true });
+mkdirSync(OLA1_SHOTS, { recursive: true });
 
 function shot(name: string) {
   return join(QA_SHOTS, name);
+}
+
+function ola1Shot(name: string) {
+  return join(OLA1_SHOTS, name);
 }
 
 async function waitForApi(request: APIRequestContext) {
@@ -153,5 +160,82 @@ test.describe("guardia · cáscara móvil (390x844)", () => {
     await goToTab(page, "Rango");
     await expect(page.locator(".rank-xp strong")).toHaveText("460");
     await page.screenshot({ path: shot("06-rango-tras-xp.png"), fullPage: true });
+  });
+
+  // G-01: tras ENVIAR un examen, la pantalla de resultado permanece visible y NO
+  // rebota a la Lección 1. Antes de la Ola 1, loadCourse reseteaba quizAttempt y la
+  // lección activa al refrescar, así que el resultado desaparecía al instante.
+  test("G-01: al enviar el examen, el resultado permanece (no rebota a la Lección 1)", async ({ page }) => {
+    await loginGuardia(page);
+    await goToTab(page, "Cursos");
+    await page.getByRole("button", { name: "Abrir curso Seguridad Intramuros" }).click();
+    await expect(page.locator(".guard-course-detail")).toBeVisible({ timeout: 20_000 });
+
+    // Abrir el examen del curso (el guardia está inscrito; Intramuros 0%).
+    const examRow = page.locator(".quiz-row", { hasText: "Examen final de Seguridad Intramuros" });
+    await expect(examRow).toBeVisible({ timeout: 20_000 });
+    await examRow.click();
+
+    // Se monta el panel de evaluación con el CTA de envío.
+    await expect(page.getByRole("heading", { name: "Evaluación" })).toBeVisible({ timeout: 20_000 });
+    const submit = page.getByRole("button", { name: "Enviar evaluación" });
+    await expect(submit).toBeVisible();
+
+    // Enviar sin responder ⇒ 0% ⇒ "No aprobado". Esperamos la respuesta del submit
+    // (tras la cual corre loadCourse con preserveAttempt) para observar el estado final.
+    const submitResp = page.waitForResponse(
+      (r) => r.url().includes("/submit") && r.request().method() === "POST"
+    );
+    await submit.click();
+    await submitResp;
+    // Dejar asentar el refresco de temario/inscripción que dispara el submit.
+    await page.waitForTimeout(1500);
+
+    // La pantalla de resultado está y PERMANECE (no se ve el panel de lección).
+    const result = page.locator(".quiz-result");
+    await expect(result).toBeVisible();
+    await expect(result).toContainText("No aprobado");
+    await expect(page.locator(".quiz-result-score")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reintentar" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Volver al curso" })).toBeVisible();
+    // Anti-rebote: NO estamos en una lección (no hay CTA de completar lección).
+    await expect(page.getByRole("button", { name: "Marcar completada" })).toHaveCount(0);
+    await page.screenshot({ path: ola1Shot("guardia-examen-resultado-persistente.png"), fullPage: true });
+  });
+
+  // G-06: completar una lección que NO es la primera deja al usuario en esa lección
+  // (la activa se conserva si sigue existiendo tras recargar), no en la Lección 1.
+  test("G-06: completar una lección no-primera deja al usuario en ESA lección", async ({ page }) => {
+    const firstTitle = "Introduccion a Seguridad Intramuros";
+    const targetTitle = "Video demostrativo: Seguridad Intramuros";
+
+    await loginGuardia(page);
+    await goToTab(page, "Cursos");
+    await page.getByRole("button", { name: "Abrir curso Seguridad Intramuros" }).click();
+    await expect(page.locator(".guard-course-detail")).toBeVisible({ timeout: 20_000 });
+
+    // Al abrir, la lección activa es la primera. Navegar a una lección posterior.
+    const targetRow = page.locator(".lesson-row", { hasText: targetTitle });
+    await expect(targetRow).toBeVisible({ timeout: 20_000 });
+    await targetRow.click();
+    await expect(page.locator(".lesson-row.active")).toContainText(targetTitle);
+
+    // Completar esa lección (no la primera).
+    const complete = page.getByRole("button", { name: "Marcar completada" });
+    await expect(complete).toBeVisible({ timeout: 20_000 });
+    const completeResp = page.waitForResponse(
+      (r) => r.url().includes("/complete") && r.request().method() === "POST"
+    );
+    await complete.click();
+    await completeResp;
+    // Dejar asentar el loadCourse que refresca el temario tras completar.
+    await page.waitForTimeout(1500);
+
+    // Seguimos en la MISMA lección (no rebotamos a la primera).
+    await expect(page.locator(".lesson-row.active")).toContainText(targetTitle);
+    await expect(page.locator(".lesson-row.active")).not.toContainText(firstTitle);
+    // Y quedó marcada como completada (el CTA pasó a "Completada").
+    await expect(page.getByRole("button", { name: "Completada" })).toBeVisible();
+    await page.screenshot({ path: ola1Shot("guardia-completar-leccion-no-primera.png"), fullPage: true });
   });
 });

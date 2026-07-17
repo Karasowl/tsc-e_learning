@@ -88,7 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "reports", label: "Reportes", Icon: BarChart3 },
       { key: "diplomas", label: "Diplomas", Icon: Award },
-      { key: "notifications", label: "Notificaciones", Icon: Bell },
+      { key: "notifications", label: "Correos automáticos", Icon: Mail },
       { key: "audit", label: "Bitácora", Icon: ScrollText }
     ]
   }
@@ -102,7 +102,7 @@ const VIEW_TITLES: Record<OpsView, string> = {
   directory: "Directorio",
   reports: "Reportes",
   diplomas: "Diplomas",
-  notifications: "Notificaciones",
+  notifications: "Correos automáticos",
   audit: "Bitácora"
 };
 
@@ -273,10 +273,10 @@ export function AdminOpsCenter({
               className="icon-button ops-bell"
               onClick={() => go("notifications")}
               type="button"
-              aria-label="Notificaciones"
-              title="Notificaciones"
+              aria-label="Correos automáticos"
+              title="Correos automáticos"
             >
-              <Bell aria-hidden />
+              <Mail aria-hidden />
             </button>
             <button className="icon-button" onClick={onToggleTheme} type="button" aria-label="Cambiar tema" title="Cambiar tema">
               {theme === "dark" ? <Sun aria-hidden /> : <Moon aria-hidden />}
@@ -357,22 +357,44 @@ function OpsDashboard({ token, onNavigate }: { token: string; onNavigate: (view:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const data = await authFetch<{ kpis: Kpis; activity: ActivityItem[] }>(token, "/admin/overview");
-      setKpis(data.kpis);
-      setActivity(data.activity);
-    } catch (loadError) {
-      setError(errorText(loadError));
-    } finally {
-      setBusy(false);
-    }
-  }, [token]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) {
+        setBusy(true);
+        setError(null);
+      }
+      try {
+        const data = await authFetch<{ kpis: Kpis; activity: ActivityItem[] }>(token, "/admin/overview");
+        setKpis(data.kpis);
+        setActivity(data.activity);
+        if (silent) {
+          setError(null);
+        }
+      } catch (loadError) {
+        // Un refresco de fondo fallido no debe tapar el tablero con un error.
+        if (!silent) {
+          setError(errorText(loadError));
+        }
+      } finally {
+        if (!silent) {
+          setBusy(false);
+        }
+      }
+    },
+    [token]
+  );
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  // "EN VIVO" real: re-consulta ligera del resumen cada 45s sin parpadeo,
+  // limpiando el intervalo al desmontar.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void load(true);
+    }, 45000);
+    return () => window.clearInterval(timer);
   }, [load]);
 
   const cards: Array<{ label: string; value: number; Icon: typeof Award; target?: OpsView; tone: string }> = kpis

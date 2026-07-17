@@ -50,6 +50,41 @@ function certificateStorageKey(folio: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Guarda de entorno: el seed reescribe datos y SOLO debe correr contra la base
+// local de desarrollo. Aborta (sin escribir nada) si NODE_ENV es production o si
+// DATABASE_URL apunta a un host que no sea local. ALLOW_SEED=1 fuerza la corrida
+// bajo responsabilidad de quien la ejecuta (p. ej. una base local con otro host).
+// ---------------------------------------------------------------------------
+function assertLocalSeedTarget() {
+  if (process.env.ALLOW_SEED === "1") {
+    return;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "db:seed abortado: NODE_ENV=production. El seed solo debe correr contra una base local de desarrollo. Usa ALLOW_SEED=1 para forzarlo bajo tu propia responsabilidad."
+    );
+  }
+
+  const rawUrl = process.env.DATABASE_URL ?? "";
+  let host: string;
+  try {
+    host = new URL(rawUrl).hostname;
+  } catch {
+    throw new Error(
+      "db:seed abortado: DATABASE_URL ausente o no parseable. El seed solo corre contra una base local (localhost/127.0.0.1). Usa ALLOW_SEED=1 para forzarlo."
+    );
+  }
+
+  const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+  if (!localHosts.has(host)) {
+    throw new Error(
+      `db:seed abortado: DATABASE_URL apunta a un host no local (${host}). El seed solo corre contra localhost/127.0.0.1 (base de desarrollo, típicamente :5433). Usa ALLOW_SEED=1 para forzarlo bajo tu propia responsabilidad.`
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Upserts base
 // ---------------------------------------------------------------------------
 async function upsertUser(opts: {
@@ -685,6 +720,8 @@ async function upsertAchievementEvent(opts: { sourceId: string; userId: string; 
 // main
 // ---------------------------------------------------------------------------
 async function main() {
+  assertLocalSeedTarget();
+
   const passwordHash = await hashApplicationPassword(DEV_PASSWORD);
 
   // --- Usuarios ---

@@ -13,7 +13,7 @@
  * userId: `${userId}:${key}`. Asi dos usuarios pueden completar la misma leccion
  * sin colisionar, y el mismo usuario no cobra dos veces el mismo evento.
  */
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
 /** Marca de origen para las filas creadas por este motor (vs. "seed" de GamiPress). */
 export const LEDGER_SOURCE = "ledger";
@@ -146,7 +146,10 @@ export type GrantXpResult = {
  * XP total de un usuario = suma de TODOS sus AchievementEvent.points
  * (historial GamiPress + eventos del ledger).
  */
-export async function totalXp(prisma: PrismaClient, userId: string): Promise<number> {
+export async function totalXp(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string
+): Promise<number> {
   const aggregate = await prisma.achievementEvent.aggregate({
     where: { userId },
     _sum: { points: true }

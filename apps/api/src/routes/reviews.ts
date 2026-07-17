@@ -50,25 +50,6 @@ export async function registerReviewRoutes(server: FastifyInstance) {
       return reply.code(403).send({ error: "Enrollment required" });
     }
 
-    const existing = await getPrisma().courseReview.findFirst({
-      where: {
-        courseId: params.data.courseId,
-        userId: auth.userId
-      }
-    });
-
-    if (existing) {
-      const review = await getPrisma().courseReview.update({
-        where: { id: existing.id },
-        data: {
-          rating: body.data.rating,
-          body: body.data.body ?? null
-        }
-      });
-
-      return { review: serializeReview(review) };
-    }
-
     const user = await getPrisma().user.findUnique({
       where: { id: auth.userId }
     });
@@ -77,8 +58,21 @@ export async function registerReviewRoutes(server: FastifyInstance) {
       return reply.code(404).send({ error: "User not found" });
     }
 
-    const review = await getPrisma().courseReview.create({
-      data: {
+    // Upsert on @@unique([courseId, userId]): re-submitting edits the same review
+    // (rating/body only, moderation status preserved) and two concurrent posts
+    // collapse to a single row instead of duplicating.
+    const review = await getPrisma().courseReview.upsert({
+      where: {
+        courseId_userId: {
+          courseId: params.data.courseId,
+          userId: auth.userId
+        }
+      },
+      update: {
+        rating: body.data.rating,
+        body: body.data.body ?? null
+      },
+      create: {
         courseId: params.data.courseId,
         userId: auth.userId,
         authorName: user.displayName,
@@ -103,13 +97,25 @@ export async function registerReviewRoutes(server: FastifyInstance) {
       return reply.code(400).send({ error: params.error.flatten() });
     }
 
-    const reviews = await getPrisma().courseReview.findMany({
-      where: {
-        courseId: params.data.courseId,
-        status: "APPROVED"
-      },
-      orderBy: { createdAt: "desc" }
-    });
+    const [reviews, viewerReview] = await Promise.all([
+      getPrisma().courseReview.findMany({
+        where: {
+          courseId: params.data.courseId,
+          status: "APPROVED"
+        },
+        orderBy: { createdAt: "desc" }
+      }),
+      // The authenticated viewer's own review, regardless of moderation status,
+      // so the UI can prefill/lock their form. Null when they have not reviewed.
+      getPrisma().courseReview.findUnique({
+        where: {
+          courseId_userId: {
+            courseId: params.data.courseId,
+            userId: auth.userId
+          }
+        }
+      })
+    ]);
 
     const ratings = reviews
       .map((review) => review.rating)
@@ -127,7 +133,15 @@ export async function registerReviewRoutes(server: FastifyInstance) {
         createdAt: review.createdAt
       })),
       averageRating,
-      count: reviews.length
+      count: reviews.length,
+      viewerReview: viewerReview
+        ? {
+            rating: viewerReview.rating,
+            body: viewerReview.body,
+            status: viewerReview.status,
+            createdAt: viewerReview.createdAt
+          }
+        : null
     };
   });
 

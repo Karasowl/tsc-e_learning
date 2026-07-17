@@ -157,7 +157,11 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
       data.level = body.data.level;
     }
     if (body.data.thumbnailAssetId !== undefined) {
-      data.thumbnailAssetId = body.data.thumbnailAssetId;
+      // thumbnailAssetId is now a real FK to Asset: set it through the relation
+      // (a null clears the thumbnail, a value links an existing asset).
+      data.thumbnailAsset = body.data.thumbnailAssetId
+        ? { connect: { id: body.data.thumbnailAssetId } }
+        : { disconnect: true };
     }
     if (body.data.teacherId !== undefined && isAdmin(auth)) {
       data.teacher = { connect: { id: body.data.teacherId } };

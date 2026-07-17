@@ -9,7 +9,10 @@ const configSchema = z.object({
   JWT_SECRET: z.string().min(24).default("dev-secret-change-this-before-production"),
   JWT_EXPIRES_IN: z.string().default("30d"),
   GOOGLE_CLIENT_ID: z.string().optional(),
-  STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
+  // Only the local filesystem driver is implemented. "s3" was never wired, so it
+  // is not an accepted value: setting STORAGE_DRIVER=s3 fails config validation
+  // with a clear "Invalid enum value" error instead of silently doing nothing.
+  STORAGE_DRIVER: z.enum(["local"]).default("local"),
   LOCAL_STORAGE_ROOT: z.string().default("./storage"),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
@@ -33,7 +36,7 @@ export type AppConfig = {
   jwtSecret: string;
   jwtExpiresIn: string;
   googleClientId: string | undefined;
-  storageDriver: "local" | "s3";
+  storageDriver: "local";
   localStorageRoot: string;
   smtp: {
     host: string | undefined;

@@ -68,6 +68,18 @@ async function main() {
   });
   await setEnrollment(guardia.id, "seguridad-intramuros", 0);
 
+  // 2b) Intramuros: borrar los intentos de examen del guardia para que el examen
+  //     (maxAttempts=3) vuelva a estar disponible en cada corrida de e2e. Solo
+  //     toca el examen de Intramuros; el intento SELLADO de "Proteccion Ejecutiva"
+  //     que verifica el QA del instructor queda intacto. El borrado del intento
+  //     arrastra sus QuizAnswer por cascade.
+  const removedAttempts = await prisma.quizAttempt.deleteMany({
+    where: {
+      userId: guardia.id,
+      quiz: { course: { slug: "seguridad-intramuros" } }
+    }
+  });
+
   // 3) Custodia: exactamente 2 de 3 lecciones completadas (66.67%), la última sin
   //    completar. Restaura el curso "Continuar tu misión" del hub de Rango.
   if (custodiaLessons.length > 0) {
@@ -89,7 +101,7 @@ async function main() {
   }
 
   console.log(
-    `[reset-guardia] Baseline restaurado: Intramuros 0%, Custodia 66.67%, ${removedXp.count} evento(s) de XP del ledger borrados (XP → 450).`
+    `[reset-guardia] Baseline restaurado: Intramuros 0% (${removedAttempts.count} intento(s) de examen borrados), Custodia 66.67%, ${removedXp.count} evento(s) de XP del ledger borrados (XP → 450).`
   );
 }
 

@@ -9,7 +9,7 @@ type Review = { rating: number | null; body: string | null; authorName: string; 
 
 export function CourseReviews({ token, courseId }: { token: string; courseId: string }) {
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [average, setAverage] = useState(0);
+  const [average, setAverage] = useState<number | null>(0);
   const [count, setCount] = useState(0);
   const [rating, setRating] = useState(5);
   const [body, setBody] = useState("");
@@ -19,10 +19,23 @@ export function CourseReviews({ token, courseId }: { token: string; courseId: st
 
   async function load() {
     try {
-      const data = await authFetch<{ reviews: Review[]; averageRating: number; count: number }>(token, `/courses/${courseId}/reviews`);
+      const data = await authFetch<{
+        reviews: Review[];
+        averageRating: number | null;
+        count: number;
+        viewerReview?: { rating: number | null; body: string | null } | null;
+      }>(token, `/courses/${courseId}/reviews`);
       setReviews(data.reviews);
       setAverage(data.averageRating);
       setCount(data.count);
+      // G-09: si el usuario ya reseñó este curso, precarga su calificación/texto y
+      // el CTA pasa a "Actualizar reseña". Si el backend no envía el campo, se
+      // degrada de forma segura (formulario vacío, "Enviar reseña").
+      if (data.viewerReview) {
+        setRating(data.viewerReview.rating ?? 5);
+        setBody(data.viewerReview.body ?? "");
+        setDone(true);
+      }
     } catch {
       // reviews are non-critical; ignore load errors
     }
@@ -57,7 +70,14 @@ export function CourseReviews({ token, courseId }: { token: string; courseId: st
         <h3>Reseñas</h3>
         {count > 0 ? (
           <span className="rating-summary">
-            <Stars value={Math.round(average)} /> {average.toFixed(1)} · {count} reseña{count === 1 ? "" : "s"}
+            {typeof average === "number" ? (
+              <>
+                <Stars value={Math.round(average)} /> {average.toFixed(1)} ·{" "}
+              </>
+            ) : (
+              <>Sin calificaciones · </>
+            )}
+            {count} reseña{count === 1 ? "" : "s"}
           </span>
         ) : (
           <span className="muted"><small>Aún sin reseñas</small></span>

@@ -228,22 +228,23 @@ function styleHeaderRow(row: ExcelJS.Row) {
 }
 
 function reportCourseWhere(auth: AuthContext, courseId: string | undefined): Prisma.CourseWhereInput {
-  const base: Prisma.CourseWhereInput = {
-    status: "PUBLISHED"
-  };
-
+  // Single-course report: the owner (teacher of the course) or an admin may inspect
+  // their own course's results even while it is a DRAFT (or ARCHIVED), so they can
+  // validate before publishing. Access stays scoped — a teacher only ever sees a
+  // course that is theirs; a courseId that is not theirs yields an empty report.
   if (courseId) {
-    base.id = courseId;
+    if (isAdmin(auth)) {
+      return { id: courseId };
+    }
+    return { id: courseId, teacherId: auth.userId };
   }
 
+  // Global report (no course filter): published courses only.
+  const base: Prisma.CourseWhereInput = { status: "PUBLISHED" };
   if (isAdmin(auth)) {
     return base;
   }
-
-  return {
-    ...base,
-    teacherId: auth.userId
-  };
+  return { ...base, teacherId: auth.userId };
 }
 
 function reportStatus(

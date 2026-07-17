@@ -1,7 +1,7 @@
 "use client";
 
 import { ComponentType, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Boxes, Check, ClipboardList, Download, FilePlus2, FileText, FolderPlus, GraduationCap, ImagePlus, LayoutList, Paperclip, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, UploadCloud, UserPlus, Users, X } from "lucide-react";
+import { ArrowLeft, Boxes, Check, ChevronDown, ChevronUp, ClipboardList, Download, FilePlus2, FileText, FolderPlus, GraduationCap, ImagePlus, LayoutList, Paperclip, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, UploadCloud, UserPlus, Users, X } from "lucide-react";
 import { RichTextEditor } from "./RichTextEditor";
 import { QuizBuilder } from "./QuizBuilder";
 import { ReviewsModeration } from "./panels";
@@ -27,6 +27,7 @@ type EditorLesson = {
   moduleId: string | null;
   title: string;
   kind: string;
+  position: number;
   body: string | null;
   videoUrl: string | null;
   assets?: LessonAsset[];
@@ -405,6 +406,63 @@ export function CourseEditor({
     }
   }
 
+  // Reordenar secciones/clases. El backend acepta `position` (1-based) en
+  // PUT /admin/modules/:id y PUT /admin/lessons/:id y renumera en cadena.
+  async function persistPosition(kind: "modules" | "lessons", id: string, position: number) {
+    setBusy(true);
+    setError(null);
+    try {
+      await authFetch(token, `/admin/${kind}/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ position })
+      });
+      await load();
+    } catch (reorderError) {
+      const message = errorText(reorderError);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function moveModule(index: number, direction: -1 | 1) {
+    if (!course) {
+      return;
+    }
+    const target = index + direction;
+    if (target < 0 || target >= course.modules.length) {
+      return;
+    }
+    // Intercambiar con el vecino equivale a pedir su posición (índice + 1).
+    void persistPosition("modules", course.modules[index]!.id, target + 1);
+  }
+
+  function moveLesson(moduleId: string, localIndex: number, direction: -1 | 1) {
+    if (!course) {
+      return;
+    }
+    const parentModule = course.modules.find((entry) => entry.id === moduleId);
+    if (!parentModule) {
+      return;
+    }
+    const neighborLocal = localIndex + direction;
+    if (neighborLocal < 0 || neighborLocal >= parentModule.lessons.length) {
+      return;
+    }
+    // El backend reordena lecciones por el orden GLOBAL del curso (no por módulo).
+    // Traducimos el intercambio dentro del módulo a la posición global del vecino.
+    const neighbor = parentModule.lessons[neighborLocal]!;
+    const globalLessons = course.modules
+      .flatMap((entry) => entry.lessons)
+      .sort((left, right) => left.position - right.position);
+    const neighborGlobalIndex = globalLessons.findIndex((entry) => entry.id === neighbor.id);
+    if (neighborGlobalIndex < 0) {
+      return;
+    }
+    void persistPosition("lessons", parentModule.lessons[localIndex]!.id, neighborGlobalIndex + 1);
+  }
+
   async function addQuiz(moduleId: string, title: string): Promise<boolean> {
     if (!course || !title.trim()) {
       return false;
@@ -610,11 +668,19 @@ export function CourseEditor({
         <InlineAdd label="Sección" placeholder="Nombre de la sección" icon={FolderPlus} busy={busy} onAdd={addModule} />
       </div>
 
-      {course.modules.map((module) => (
+      {course.modules.map((module, moduleIndex) => (
         <div className="module-edit" key={module.id}>
           <div className="module-edit-head">
             <strong>{module.title}</strong>
             <div className="quiz-actions">
+              <span className="order-controls">
+                <button className="icon-button" disabled={busy || moduleIndex === 0} onClick={() => moveModule(moduleIndex, -1)} title="Subir sección" aria-label="Subir sección" type="button">
+                  <ChevronUp aria-hidden />
+                </button>
+                <button className="icon-button" disabled={busy || moduleIndex === course.modules.length - 1} onClick={() => moveModule(moduleIndex, 1)} title="Bajar sección" aria-label="Bajar sección" type="button">
+                  <ChevronDown aria-hidden />
+                </button>
+              </span>
               <button className="secondary-button" disabled={busy} onClick={() => setLessonModal({ moduleId: module.id })} type="button">
                 <FilePlus2 aria-hidden /> Clase
               </button>
@@ -628,7 +694,7 @@ export function CourseEditor({
             <p className="empty-state">Sin clases todavía.</p>
           ) : (
             <div className="lesson-rows">
-              {module.lessons.map((lesson) => (
+              {module.lessons.map((lesson, lessonIndex) => (
                 <div className="lesson-row-edit" key={lesson.id}>
                   <button className="lesson-row-open" onClick={() => setLessonModal({ moduleId: module.id, lesson })} type="button">
                     <FileText aria-hidden />
@@ -638,6 +704,14 @@ export function CourseEditor({
                     ) : null}
                     <Pencil className="row-edit-hint" aria-hidden />
                   </button>
+                  <span className="order-controls">
+                    <button className="icon-button" disabled={busy || lessonIndex === 0} onClick={() => moveLesson(module.id, lessonIndex, -1)} title="Subir clase" aria-label="Subir clase" type="button">
+                      <ChevronUp aria-hidden />
+                    </button>
+                    <button className="icon-button" disabled={busy || lessonIndex === module.lessons.length - 1} onClick={() => moveLesson(module.id, lessonIndex, 1)} title="Bajar clase" aria-label="Bajar clase" type="button">
+                      <ChevronDown aria-hidden />
+                    </button>
+                  </span>
                   <button className="icon-button" disabled={busy} onClick={() => void removeLesson(lesson.id)} title="Eliminar clase" type="button">
                     <Trash2 aria-hidden />
                   </button>

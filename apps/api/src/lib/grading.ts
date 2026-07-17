@@ -76,7 +76,15 @@ export function gradeQuizSubmission(
     };
   });
 
-  const totalMarks = round2(questions.reduce((sum, question) => sum + question.points, 0));
+  // OPEN_ENDED can't be auto-graded and is excluded from the product. An inherited
+  // one must NOT inflate the denominator (it would keep a perfect auto-gradable
+  // score below passing). It never adds to earnedMarks either (always scores 0),
+  // so dropping it from totalMarks keeps the percentage exact.
+  const totalMarks = round2(
+    questions
+      .filter((question) => question.type !== "OPEN_ENDED")
+      .reduce((sum, question) => sum + question.points, 0)
+  );
   const earnedMarks = round2(results.reduce((sum, result) => sum + result.score, 0));
   const totalAnsweredQuestions = results.filter(
     (result) => result.selectedOptionIds.length > 0 || result.text !== null || result.matches.length > 0

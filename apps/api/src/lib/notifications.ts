@@ -17,18 +17,33 @@ export type NotificationProcessResult = {
  *
  * Recipients = the student's email (loaded from User by userId) PLUS the
  * recipients of every enabled rule that matches the event (copy to RH/admin),
- * deduplicated so nobody is mailed twice. The log is created even when there is
- * no matching rule, so the student is always notified. The first matching rule
- * (if any) is recorded in the payload as `ruleId` so the worker can pick up a
- * custom subject.
+ * deduplicated so nobody is mailed twice.
+ *
+ * Email guard: the student is added to `sentTo` ONLY when their stored email is
+ * a real address (present and containing "@"). Migrated/placeholder accounts
+ * without a real email are never mailed, per the product decision "solo se envía
+ * correo al alumno si tiene email real".
+ *
+ * The log is ALWAYS created — even with no matching rule AND no deliverable
+ * student email — so every student-facing event leaves a truthful audit record
+ * (e.g. CERTIFICATE_ISSUED). A log whose `sentTo` is empty simply has nobody to
+ * deliver to. The first matching rule (if any) is recorded in the payload as
+ * `ruleId` so the worker can pick up a custom subject.
+ *
+ * `client` lets the caller run this inside an interactive transaction (defaults
+ * to the shared client) so the log can be created atomically with the event that
+ * triggered it (e.g. the certificate row).
  */
-export async function emitStudentNotification(args: {
-  eventType: NotificationEventType;
-  userId: string;
-  courseId: string;
-  payload: Record<string, unknown>;
-}): Promise<void> {
-  const prisma = getPrisma();
+export async function emitStudentNotification(
+  args: {
+    eventType: NotificationEventType;
+    userId: string;
+    courseId: string;
+    payload: Record<string, unknown>;
+  },
+  client: Prisma.TransactionClient = getPrisma()
+): Promise<void> {
+  const prisma = client;
 
   const [student, rules] = await Promise.all([
     prisma.user.findUnique({ where: { id: args.userId }, select: { email: true, displayName: true } }),
@@ -37,8 +52,9 @@ export async function emitStudentNotification(args: {
 
   const recipients = new Set<string>();
 
+  // Only a real address (present and containing "@") is a deliverable recipient.
   const studentEmail = student?.email?.trim();
-  if (studentEmail) {
+  if (studentEmail && studentEmail.includes("@")) {
     recipients.add(studentEmail.toLowerCase());
   }
 
@@ -51,14 +67,11 @@ export async function emitStudentNotification(args: {
     }
   }
 
-  // Nothing to deliver (no student email and no rule recipients): skip.
-  if (recipients.size === 0) {
-    return;
-  }
-
   const firstRuleId = rules[0]?.id ?? null;
   const studentName = student?.displayName?.trim();
 
+  // Always create the log (even with zero recipients): the event happened and
+  // must be auditable. The worker delivers to whoever is in `sentTo`.
   await prisma.notificationLog.create({
     data: {
       eventType: args.eventType,

@@ -178,6 +178,7 @@ model Course {
   level           String?
   durationSec     Int?
   thumbnailAssetId String?
+  thumbnailAsset  Asset?         @relation("CourseThumbnail", fields: [thumbnailAssetId], references: [id], onDelete: SetNull)
   sourceSystem    String?
   sourceId        String?
   publishedAt     DateTime?
@@ -188,7 +189,7 @@ model Course {
   lessons         Lesson[]
   quizzes         Quiz[]
   enrollments     Enrollment[]
-  assets          Asset[]
+  assets          Asset[]        @relation("CourseAssets")
   certificates    Certificate[]
   achievementSteps AchievementStep[]
   achievementAwards AchievementAward[]
@@ -250,8 +251,9 @@ model Asset {
   sourceSystem String?
   sourceId     String?
   createdAt    DateTime @default(now())
-  course       Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  course       Course?  @relation("CourseAssets", fields: [courseId], references: [id], onDelete: SetNull)
   lesson       Lesson?  @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  thumbnailForCourses Course[] @relation("CourseThumbnail")
 
   @@unique([sourceSystem, sourceId])
 }
@@ -427,6 +429,10 @@ model Certificate {
   course         Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
   template       CertificateTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
+  // A student holds at most one certificate per course. Guarantees idempotent,
+  // race-safe emission: concurrent POST /certificates/issue calls collapse to a
+  // single row (the loser catches P2002 and returns the existing diploma).
+  @@unique([userId, courseId])
   @@unique([sourceSystem, sourceId])
 }
 
@@ -512,6 +518,10 @@ model CourseReview {
   course       Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
   user         User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  // One review per (course, authenticated user). userId is nullable, and Postgres
+  // treats NULLs as distinct, so legacy/imported reviews without a user account
+  // are unaffected; only real users are constrained to a single review per course.
+  @@unique([courseId, userId])
   @@index([courseId, status])
   @@unique([sourceSystem, sourceId])
 }

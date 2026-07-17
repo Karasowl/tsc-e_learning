@@ -1,6 +1,7 @@
 import { getPrisma } from "@tsc-capacita/db";
 import type { FastifyInstance } from "fastify";
 import { isAdmin, requireAuth } from "../lib/auth.js";
+import type { AppConfig } from "../lib/config.js";
 
 /**
  * Read-only aggregates that power the admin landing dashboard ("Tablero") and the
@@ -8,7 +9,7 @@ import { isAdmin, requireAuth } from "../lib/auth.js";
  * findMany — nothing is fabricated. If a source has no rows, the number is a
  * truthful zero and the activity feed is honestly empty.
  */
-export async function registerAdminOverviewRoutes(server: FastifyInstance) {
+export async function registerAdminOverviewRoutes(server: FastifyInstance, config: AppConfig) {
   server.get("/admin/overview", async (request, reply) => {
     const auth = await requireAuth(server, request, reply);
     if (!auth) {
@@ -26,6 +27,7 @@ export async function registerAdminOverviewRoutes(server: FastifyInstance) {
       publishedCourses,
       completedCourses,
       diplomas,
+      pendingNotifications,
       recentCerts,
       recentCompletions
     ] = await Promise.all([
@@ -35,6 +37,9 @@ export async function registerAdminOverviewRoutes(server: FastifyInstance) {
       prisma.course.count({ where: { status: "PUBLISHED" } }),
       prisma.enrollment.count({ where: { status: "COMPLETED" } }),
       prisma.certificate.count({ where: { status: "ISSUED" } }),
+      // Correo aún sin despachar: NotificationLog en PENDING (el worker los pasa a
+      // SENT/FAILED). Es la señal real de "hay correo encolado".
+      prisma.notificationLog.count({ where: { status: "PENDING" } }),
       prisma.certificate.findMany({
         where: { status: "ISSUED" },
         orderBy: { issuedAt: "desc" },
@@ -83,6 +88,11 @@ export async function registerAdminOverviewRoutes(server: FastifyInstance) {
       .sort((a, b) => b.at.getTime() - a.at.getTime())
       .slice(0, 12);
 
+    // SMTP is "configured" only when host + user + password are all present — the
+    // exact condition the email provider requires to send. When false, the worker
+    // does not run and pendingNotifications will not drain.
+    const smtpConfigured = Boolean(config.smtp.host && config.smtp.user && config.smtp.password);
+
     return {
       kpis: {
         activeCollaborators,
@@ -92,6 +102,8 @@ export async function registerAdminOverviewRoutes(server: FastifyInstance) {
         completedCourses,
         diplomas
       },
+      pendingNotifications,
+      smtpConfigured,
       activity
     };
   });
