@@ -5,10 +5,35 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { logAdminAction } from "../lib/audit.js";
 import { isAdmin, isTeacherOrAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
+import { isEnrollmentExpired } from "../lib/gating.js";
 
 const courseIdSchema = z.object({
   courseId: z.string().min(1)
 });
+
+const enrollmentStatusSchema = z.enum(["ACTIVE", "COMPLETED", "SUSPENDED", "EXPIRED"]);
+
+const masterListSchema = z.object({
+  courseId: z.string().min(1).optional(),
+  userId: z.string().min(1).optional(),
+  q: z.string().trim().optional(),
+  status: enrollmentStatusSchema.optional(),
+  sourceSystem: z.string().trim().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(25)
+});
+
+// expiresAt: cadena ISO para fijar la fecha, o null para limpiarla. Al menos uno
+// de expiresAt/status debe venir para que la acción masiva tenga efecto.
+const bulkUpdateSchema = z
+  .object({
+    enrollmentIds: z.array(z.string().min(1)).min(1).max(500),
+    expiresAt: z.string().min(1).nullable().optional(),
+    status: enrollmentStatusSchema.optional()
+  })
+  .refine((value) => value.expiresAt !== undefined || value.status !== undefined, {
+    message: "Provide expiresAt or status"
+  });
 
 const enrollmentParamsSchema = z.object({
   courseId: z.string().min(1),
@@ -39,6 +64,126 @@ const enrollSchema = z
   });
 
 export async function registerEnrollmentAdminRoutes(server: FastifyInstance) {
+  // Padrón maestro de inscripciones (global, admin). Filtros por curso, usuario/q,
+  // estado (incluido el EXPIRED derivado por expiresAt), origen y paginación.
+  server.get("/admin/enrollments", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+    if (!isAdmin(auth)) {
+      return reply.code(403).send({ error: "Admin role required" });
+    }
+
+    const query = masterListSchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.code(400).send({ error: query.error.flatten() });
+    }
+
+    const now = new Date();
+    const where: Prisma.EnrollmentWhereInput = {};
+    if (query.data.courseId) {
+      where.courseId = query.data.courseId;
+    }
+    if (query.data.userId) {
+      where.userId = query.data.userId;
+    }
+    if (query.data.sourceSystem) {
+      where.sourceSystem = query.data.sourceSystem;
+    }
+    if (query.data.q) {
+      where.user = {
+        OR: [
+          { displayName: { contains: query.data.q, mode: "insensitive" } },
+          { email: { contains: query.data.q, mode: "insensitive" } },
+          { employeeCode: { contains: query.data.q, mode: "insensitive" } }
+        ]
+      };
+    }
+    // EXPIRED es a la vez enum y estado derivado: una inscripción cuenta como
+    // vencida si su status ya es EXPIRED o si su expiresAt ya pasó.
+    if (query.data.status === "EXPIRED") {
+      where.OR = [{ status: "EXPIRED" }, { expiresAt: { lt: now } }];
+    } else if (query.data.status) {
+      where.status = query.data.status;
+    }
+
+    const skip = (query.data.page - 1) * query.data.pageSize;
+    const [rows, total] = await Promise.all([
+      getPrisma().enrollment.findMany({
+        where,
+        orderBy: [{ enrolledAt: "desc" }],
+        skip,
+        take: query.data.pageSize,
+        include: {
+          user: { select: { id: true, displayName: true, email: true, employeeCode: true, serviceLabel: true } },
+          course: { select: { id: true, title: true, slug: true } }
+        }
+      }),
+      getPrisma().enrollment.count({ where })
+    ]);
+
+    return {
+      enrollments: rows.map((row) => serializeMasterEnrollment(row, now)),
+      total,
+      page: query.data.page,
+      pageSize: query.data.pageSize
+    };
+  });
+
+  // Acción masiva: fija expiresAt y/o status sobre un conjunto de inscripciones.
+  server.post("/admin/enrollments/bulk", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+    if (!isAdmin(auth)) {
+      return reply.code(403).send({ error: "Admin role required" });
+    }
+
+    const body = bulkUpdateSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: body.error.flatten() });
+    }
+
+    const data: Prisma.EnrollmentUpdateManyMutationInput = {};
+    if (body.data.status !== undefined) {
+      data.status = body.data.status;
+    }
+    if (body.data.expiresAt !== undefined) {
+      if (body.data.expiresAt === null) {
+        data.expiresAt = null;
+      } else {
+        const parsedDate = new Date(body.data.expiresAt);
+        if (Number.isNaN(parsedDate.getTime())) {
+          return reply.code(400).send({ error: "expiresAt no es una fecha válida" });
+        }
+        data.expiresAt = parsedDate;
+      }
+    }
+
+    const result = await getPrisma().enrollment.updateMany({
+      where: { id: { in: body.data.enrollmentIds } },
+      data
+    });
+
+    await logAdminAction({
+      actorId: auth.userId,
+      action: "ENROLLMENT_BULK_UPDATED",
+      summary: `Actualizó ${result.count} inscripción(es) de forma masiva`,
+      targetType: "enrollment",
+      metadata: {
+        count: result.count,
+        requested: body.data.enrollmentIds.length,
+        ...(body.data.status !== undefined ? { status: body.data.status } : {}),
+        ...(body.data.expiresAt !== undefined ? { expiresAt: body.data.expiresAt } : {})
+      },
+      logger: request.log
+    });
+
+    return { updated: result.count };
+  });
+
   // Search the people the admin can grant access to. Limited to STUDENT accounts.
   server.get("/admin/students", async (request, reply) => {
     const auth = await requireAuth(server, request, reply);
@@ -274,6 +419,48 @@ export async function registerEnrollmentAdminRoutes(server: FastifyInstance) {
 
 function canEditCourse(auth: AuthContext, course: { teacherId: string | null }) {
   return isAdmin(auth) || (auth.roles.includes("TEACHER") && course.teacherId === auth.userId);
+}
+
+export function serializeMasterEnrollment(
+  enrollment: {
+    id: string;
+    userId: string;
+    courseId: string;
+    status: string;
+    progressPercent: Prisma.Decimal;
+    enrolledAt: Date;
+    completedAt: Date | null;
+    expiresAt: Date | null;
+    sourceSystem: string | null;
+    user: { id: string; displayName: string; email: string; employeeCode: string | null; serviceLabel: string | null };
+    course: { id: string; title: string; slug: string };
+  },
+  now: Date
+) {
+  return {
+    id: enrollment.id,
+    userId: enrollment.userId,
+    courseId: enrollment.courseId,
+    user: {
+      id: enrollment.user.id,
+      displayName: enrollment.user.displayName,
+      email: enrollment.user.email,
+      employeeCode: enrollment.user.employeeCode,
+      serviceLabel: enrollment.user.serviceLabel
+    },
+    course: {
+      id: enrollment.course.id,
+      title: enrollment.course.title,
+      slug: enrollment.course.slug
+    },
+    status: enrollment.status,
+    progressPercent: enrollment.progressPercent.toNumber(),
+    enrolledAt: enrollment.enrolledAt,
+    completedAt: enrollment.completedAt,
+    expiresAt: enrollment.expiresAt,
+    expired: isEnrollmentExpired(enrollment.expiresAt, now),
+    sourceSystem: enrollment.sourceSystem
+  };
 }
 
 function serializeEnrollment(enrollment: {

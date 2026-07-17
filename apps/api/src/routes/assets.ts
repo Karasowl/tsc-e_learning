@@ -14,6 +14,75 @@ const assetIdParamsSchema = z.object({
   assetId: z.string().min(1)
 });
 
+const streamQuerySchema = z.object({
+  token: z.string().min(1)
+});
+
+// El <video src> del alumno no puede mandar el header Authorization, así que el
+// acceso al blob se autoriza con un token JWT corto (15 min) firmado por el mismo
+// firmante del proyecto y acotado a un assetId concreto.
+const ASSET_STREAM_SCOPE = "asset-stream";
+const ASSET_STREAM_TTL = "15m";
+const ASSET_STREAM_TTL_SECONDS = 15 * 60;
+
+/**
+ * Valida (puro) que el payload de un token de streaming corresponda al asset que
+ * se pide. El token debe llevar el scope correcto y el mismo assetId de la URL,
+ * de modo que un token emitido para un asset no sirva para otro.
+ */
+export function assetStreamClaimsValid(payload: unknown, assetId: string): boolean {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+  const claims = payload as { scope?: unknown; assetId?: unknown };
+  return claims.scope === ASSET_STREAM_SCOPE && claims.assetId === assetId;
+}
+
+/**
+ * Interpreta un header Range de una sola porción (`bytes=start-end`) contra un
+ * blob de `size` bytes. Devuelve el rango [start,end] inclusivo saneado, o null
+ * cuando no hay Range, es multi-rango o es inválido (en ese caso se sirve 200
+ * completo). Necesario para que el <video> pueda buscar (seek) y para Safari.
+ */
+export function parseRangeHeader(header: string | undefined, size: number): { start: number; end: number } | null {
+  if (!header || !header.startsWith("bytes=") || size <= 0) {
+    return null;
+  }
+  const spec = header.slice("bytes=".length).trim();
+  if (spec === "" || spec.includes(",")) {
+    return null;
+  }
+  const dash = spec.indexOf("-");
+  if (dash === -1) {
+    return null;
+  }
+  const startStr = spec.slice(0, dash);
+  const endStr = spec.slice(dash + 1);
+
+  // Sufijo `bytes=-N`: las últimas N bytes.
+  if (startStr === "") {
+    const suffix = Number(endStr);
+    if (!Number.isInteger(suffix) || suffix <= 0) {
+      return null;
+    }
+    return { start: Math.max(0, size - suffix), end: size - 1 };
+  }
+
+  const start = Number(startStr);
+  if (!Number.isInteger(start) || start < 0 || start >= size) {
+    return null;
+  }
+  let end = endStr === "" ? size - 1 : Number(endStr);
+  if (!Number.isInteger(end)) {
+    return null;
+  }
+  end = Math.min(end, size - 1);
+  if (end < start) {
+    return null;
+  }
+  return { start, end };
+}
+
 function canEditCourse(auth: AuthContext, course: { teacherId: string | null }) {
   return isAdmin(auth) || (auth.roles.includes("TEACHER") && course.teacherId === auth.userId);
 }
@@ -204,6 +273,91 @@ export async function registerAssetRoutes(server: FastifyInstance, config: AppCo
     const bytes = await provider.getObject(asset.storageKey);
 
     return reply.header("content-type", asset.mimeType ?? "application/octet-stream").send(bytes);
+  });
+
+  // Emite un token corto (15 min) para reproducir un asset en un <video>. Aplica
+  // el MISMO candado de acceso que el material del curso: usuario autenticado con
+  // acceso al curso dueño. Devuelve una URL lista para pegar en `<video src>`.
+  server.get("/assets/:assetId/video-token", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+
+    const parsed = assetIdParamsSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    const asset = await getPrisma().asset.findUnique({
+      where: { id: parsed.data.assetId },
+      include: { lesson: true }
+    });
+    if (!asset) {
+      return reply.code(404).send({ error: "Asset not found" });
+    }
+
+    const courseId = asset.courseId ?? asset.lesson?.courseId ?? null;
+    if (!(await canAccessCourse(auth, courseId))) {
+      return reply.code(403).send({ error: "No tienes acceso a este material" });
+    }
+
+    const token = server.jwt.sign(
+      { assetId: asset.id, scope: ASSET_STREAM_SCOPE },
+      { expiresIn: ASSET_STREAM_TTL }
+    );
+    const url = `${config.apiPublicUrl}/assets/${asset.id}/stream?token=${encodeURIComponent(token)}`;
+
+    return { token, url, expiresIn: ASSET_STREAM_TTL_SECONDS };
+  });
+
+  // Sirve el blob del asset autorizado por el token corto (sin header Authorization,
+  // porque el <video> no lo envía). Soporta Range para permitir seek en el player.
+  server.get("/assets/:assetId/stream", async (request, reply) => {
+    const params = assetIdParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: params.error.flatten() });
+    }
+    const query = streamQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.code(401).send({ error: "Stream token required" });
+    }
+
+    let payload: unknown;
+    try {
+      payload = await server.jwt.verify(query.data.token);
+    } catch {
+      return reply.code(401).send({ error: "Invalid or expired stream token" });
+    }
+    if (!assetStreamClaimsValid(payload, params.data.assetId)) {
+      return reply.code(403).send({ error: "Stream token does not match this asset" });
+    }
+
+    const asset = await getPrisma().asset.findUnique({ where: { id: params.data.assetId } });
+    if (!asset) {
+      return reply.code(404).send({ error: "Asset not found" });
+    }
+
+    const provider = new LocalStorageProvider(config.localStorageRoot);
+    const bytes = await provider.getObject(asset.storageKey);
+    const total = bytes.byteLength;
+    const contentType = asset.mimeType ?? "application/octet-stream";
+
+    reply.header("accept-ranges", "bytes");
+    reply.header("content-type", contentType);
+    reply.header("cache-control", "private, max-age=0");
+
+    const range = parseRangeHeader(request.headers.range, total);
+    if (range) {
+      const chunk = bytes.subarray(range.start, range.end + 1);
+      return reply
+        .code(206)
+        .header("content-range", `bytes ${range.start}-${range.end}/${total}`)
+        .header("content-length", String(chunk.byteLength))
+        .send(chunk);
+    }
+
+    return reply.header("content-length", String(total)).send(bytes);
   });
 }
 

@@ -3,7 +3,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import type { CertificateView } from "./certificates.js";
+import {
+  fillCertificatePlaceholders,
+  type CertificateTemplateBody,
+  type CertificateView
+} from "./certificates.js";
 
 // US Letter, landscape (matches the @page size of the printable HTML diploma).
 const PAGE_W = 792;
@@ -28,6 +32,10 @@ const LEGEND_COLOR = rgb(0, 0, 0);
 
 export type CertificatePdfOptions = {
   backgroundPath?: string | undefined;
+  // Plantilla vinculada al curso: sobreescribe el título y la leyenda. La imagen
+  // de fondo del PDF sigue siendo la del asset local configurado (ver nota en el
+  // reporte); template.backgroundUrl solo afecta a la vista HTML.
+  template?: CertificateTemplateBody | undefined;
 };
 
 export async function renderCertificatePdf(
@@ -59,11 +67,14 @@ export async function renderCertificatePdf(
   const fontBytes = (fontBytesCache ??= await readFile(SCRIPT_FONT_PATH));
   const scriptFont = await doc.embedFont(fontBytes, { subset: true });
 
+  const titleText = options.template?.title
+    ? fillCertificatePlaceholders(options.template.title, view)
+    : `DIPLOMADO EN ${view.courseTitle.toUpperCase()}`;
   drawCenteredLine(
     page,
     helveticaBold,
-    winAnsi(`DIPLOMADO EN ${view.courseTitle.toUpperCase()}`),
-    fitFontSize(helveticaBold, winAnsi(`DIPLOMADO EN ${view.courseTitle.toUpperCase()}`), 18 * PX_TO_PT, PAGE_W * 0.86),
+    winAnsi(titleText),
+    fitFontSize(helveticaBold, winAnsi(titleText), 18 * PX_TO_PT, PAGE_W * 0.86),
     0.26 * PAGE_H,
     TITLE_COLOR
   );
@@ -77,7 +88,9 @@ export async function renderCertificatePdf(
     NAME_COLOR
   );
 
-  const legend = `Por haber completado satisfactoriamente el programa de capacitación especializada en ${view.courseTitle}, demostrando las competencias y conocimientos necesarios para implementar estrategias efectivas de administración del personal en el sector de seguridad privada.`;
+  const legend = options.template?.legend
+    ? fillCertificatePlaceholders(options.template.legend, view)
+    : `Por haber completado satisfactoriamente el programa de capacitación especializada en ${view.courseTitle}, demostrando las competencias y conocimientos necesarios para implementar estrategias efectivas de administración del personal en el sector de seguridad privada.`;
   drawCenteredParagraph(page, helvetica, winAnsi(legend), 14 * PX_TO_PT, PAGE_W * 0.8, 0.48 * PAGE_H, 1.5, LEGEND_COLOR);
 
   const meta = `Folio: ${view.folio} · Verificación: ${view.verificationCode} · Emitido: ${formatDate(view.issuedAt)}`;

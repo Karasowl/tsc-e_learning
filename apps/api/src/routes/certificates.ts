@@ -9,6 +9,7 @@ import {
   certificateStorageKey,
   certificateVerificationCode,
   renderCertificateHtml,
+  resolveCertificateTemplateBody,
   type CertificateView
 } from "../lib/certificates.js";
 import {
@@ -248,7 +249,8 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
       where: { id: parsed.data.certificateId },
       include: {
         user: true,
-        course: true
+        course: true,
+        template: true
       }
     });
 
@@ -260,9 +262,12 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
       return reply.code(403).send({ error: "Certificate access denied" });
     }
 
+    // Si el diploma se emitió con una plantilla vinculada, se renderiza desde su
+    // diseño; si no, el camino por defecto queda intacto.
+    const templateBody = resolveCertificateTemplateBody(certificate.template?.body ?? null);
     return reply
       .header("content-type", "text/html; charset=utf-8")
-      .send(renderCertificateHtml(buildCertificateView(certificate, config)));
+      .send(renderCertificateHtml(buildCertificateView(certificate, config), templateBody));
   });
 
   server.get("/certificates/:certificateId/pdf", async (request, reply) => {
@@ -278,7 +283,7 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
 
     const certificate = await getPrisma().certificate.findUnique({
       where: { id: parsed.data.certificateId },
-      include: { user: true, course: true }
+      include: { user: true, course: true, template: true }
     });
 
     if (!certificate) {
@@ -289,8 +294,10 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
       return reply.code(403).send({ error: "Certificate access denied" });
     }
 
+    const templateBody = resolveCertificateTemplateBody(certificate.template?.body ?? null);
     const pdf = await renderCertificatePdf(buildCertificateView(certificate, config), {
-      backgroundPath: config.certificateBackgroundPath
+      backgroundPath: config.certificateBackgroundPath,
+      template: templateBody ?? undefined
     });
 
     return reply

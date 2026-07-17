@@ -7,10 +7,13 @@ import type { AppConfig } from "./lib/config.js";
 import { startNotificationWorker } from "./lib/notifications-worker.js";
 import { registerAccountRoutes } from "./routes/account.js";
 import { registerAdminOverviewRoutes } from "./routes/admin-overview.js";
+import { registerAnnouncementRoutes } from "./routes/announcements.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerInvitationRoutes } from "./routes/invitations.js";
 import { registerCertificateRoutes } from "./routes/certificates.js";
+import { registerCertificateTemplateRoutes } from "./routes/certificate-templates.js";
+import { registerInAppNotificationRoutes } from "./routes/notifications-inapp.js";
 import { registerCourseAdminRoutes } from "./routes/courses-admin.js";
 import { registerCourseRoutes } from "./routes/courses.js";
 import { registerDirectoryRoutes } from "./routes/directory.js";
@@ -84,9 +87,11 @@ export async function buildServer(config: AppConfig) {
 
   await registerAccountRoutes(server);
   await registerAdminOverviewRoutes(server, config);
+  await registerAnnouncementRoutes(server);
   await registerAssetRoutes(server, config);
   await registerAuthRoutes(server, config);
   await registerCertificateRoutes(server, config);
+  await registerCertificateTemplateRoutes(server);
   await registerCourseAdminRoutes(server);
   await registerCourseRoutes(server);
   await registerDirectoryRoutes(server);
@@ -95,6 +100,7 @@ export async function buildServer(config: AppConfig) {
   await registerHealthRoutes(server);
   await registerInventoryRoutes(server);
   await registerInvitationRoutes(server);
+  await registerInAppNotificationRoutes(server);
   await registerNotificationRoutes(server, config);
   await registerQuizAdminRoutes(server);
   await registerQuizRoutes(server);

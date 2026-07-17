@@ -6,6 +6,8 @@ import { z } from "zod";
 import { logAdminAction } from "../lib/audit.js";
 import { isAdmin, requireAuth } from "../lib/auth.js";
 import type { AppConfig } from "../lib/config.js";
+import { isEnrollmentExpired } from "../lib/gating.js";
+import { rankInfo, totalXp } from "../lib/gamification.js";
 import {
   buildActivationUrl,
   deliverInvitationEmail,
@@ -107,6 +109,132 @@ export async function registerUserAdminRoutes(server: FastifyInstance, config: A
         lastLoginAt: user.lastLoginAt,
         createdAt: user.createdAt,
         roles: user.roles.map((entry) => entry.role)
+      }))
+    };
+  });
+
+  // Expediente completo de un usuario: perfil, XP/rango, inscripciones (con
+  // vencimiento derivado), certificados, insignias y auditoría reciente sobre él.
+  server.get("/admin/users/:userId", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+    if (!isAdmin(auth)) {
+      return reply.code(403).send({ error: "Admin role required" });
+    }
+
+    const params = userIdSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: params.error.flatten() });
+    }
+
+    const prisma = getPrisma();
+    const user = await prisma.user.findUnique({
+      where: { id: params.data.userId },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        employeeCode: true,
+        serviceLabel: true,
+        status: true,
+        lastLoginAt: true,
+        currentStreak: true,
+        createdAt: true,
+        roles: { select: { role: true } },
+        enrollments: {
+          orderBy: { enrolledAt: "desc" },
+          select: {
+            id: true,
+            status: true,
+            progressPercent: true,
+            enrolledAt: true,
+            completedAt: true,
+            expiresAt: true,
+            course: { select: { id: true, title: true, slug: true } }
+          }
+        },
+        certificates: {
+          where: { status: "ISSUED" },
+          orderBy: { issuedAt: "desc" },
+          select: {
+            id: true,
+            folio: true,
+            issuedAt: true,
+            course: { select: { id: true, title: true } }
+          }
+        },
+        achievementAwards: {
+          orderBy: { awardedAt: "asc" },
+          select: {
+            achievementId: true,
+            awardedAt: true,
+            achievement: { select: { slug: true, title: true, points: true } }
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return reply.code(404).send({ error: "User not found" });
+    }
+
+    const [xp, auditEvents] = await Promise.all([
+      totalXp(prisma, user.id),
+      prisma.auditEvent.findMany({
+        where: { targetId: user.id },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        include: { actor: { select: { displayName: true } } }
+      })
+    ]);
+
+    const now = new Date();
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        employeeCode: user.employeeCode,
+        serviceLabel: user.serviceLabel,
+        status: user.status,
+        roles: user.roles.map((entry) => entry.role),
+        lastLoginAt: user.lastLoginAt,
+        currentStreak: user.currentStreak,
+        createdAt: user.createdAt
+      },
+      gamification: {
+        xp,
+        rank: rankInfo(xp)
+      },
+      enrollments: user.enrollments.map((enrollment) => ({
+        id: enrollment.id,
+        courseId: enrollment.course.id,
+        courseTitle: enrollment.course.title,
+        courseSlug: enrollment.course.slug,
+        status: enrollment.status,
+        progressPercent: enrollment.progressPercent.toNumber(),
+        enrolledAt: enrollment.enrolledAt,
+        completedAt: enrollment.completedAt,
+        expiresAt: enrollment.expiresAt,
+        expired: isEnrollmentExpired(enrollment.expiresAt, now)
+      })),
+      certificates: user.certificates.map((certificate) => ({
+        id: certificate.id,
+        folio: certificate.folio,
+        issuedAt: certificate.issuedAt,
+        courseId: certificate.course.id,
+        courseTitle: certificate.course.title
+      })),
+      badges: dedupeEarnedBadges(user.achievementAwards),
+      auditEvents: auditEvents.map((event) => ({
+        id: event.id,
+        action: event.action,
+        summary: event.summary,
+        createdAt: event.createdAt,
+        actor: event.actor?.displayName ?? null
       }))
     };
   });
@@ -451,6 +579,31 @@ export async function registerUserAdminRoutes(server: FastifyInstance, config: A
 
 function dedupeRoles(roles: Role[]): Role[] {
   return Array.from(new Set(roles));
+}
+
+export type EarnedBadge = { slug: string; title: string; points: number; awardedAt: Date };
+
+/**
+ * Colapsa los awards de un usuario a una insignia por logro, conservando la
+ * fecha de obtención más antigua (puede haber varios awards migrados por el mismo
+ * logro). Puro, para poder probarlo sin base de datos.
+ */
+export function dedupeEarnedBadges(
+  awards: Array<{ achievementId: string; awardedAt: Date; achievement: { slug: string; title: string; points: number } }>
+): EarnedBadge[] {
+  const byAchievement = new Map<string, EarnedBadge>();
+  for (const award of awards) {
+    const current = byAchievement.get(award.achievementId);
+    if (!current || award.awardedAt < current.awardedAt) {
+      byAchievement.set(award.achievementId, {
+        slug: award.achievement.slug,
+        title: award.achievement.title,
+        points: award.achievement.points,
+        awardedAt: award.awardedAt
+      });
+    }
+  }
+  return Array.from(byAchievement.values());
 }
 
 async function rolesForUser(userId: string): Promise<Role[]> {

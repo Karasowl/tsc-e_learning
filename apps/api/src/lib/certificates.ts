@@ -10,6 +10,52 @@ export type CertificateView = {
   backgroundUrl?: string;
 };
 
+/**
+ * Diseño editable de una plantilla de certificado. Se guarda como JSON en
+ * `CertificateTemplate.body`. Los campos ausentes caen al diseño por defecto, de
+ * modo que un curso sin plantilla vinculada conserva el diploma actual intacto.
+ * Los textos admiten los marcadores {{courseTitle}}, {{studentName}}, {{folio}},
+ * {{verificationCode}} y {{issuedAt}}.
+ */
+export type CertificateTemplateBody = {
+  title?: string;
+  legend?: string;
+  backgroundUrl?: string;
+};
+
+/**
+ * Lee de forma segura un `body` JSON arbitrario (Prisma.JsonValue) y devuelve
+ * solo los campos de plantilla reconocidos y no vacíos, o null si no hay ninguno
+ * (para que el emisor use el diseño por defecto sin ramas especiales).
+ */
+export function resolveCertificateTemplateBody(body: unknown): CertificateTemplateBody | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return null;
+  }
+  const record = body as Record<string, unknown>;
+  const result: CertificateTemplateBody = {};
+  if (typeof record.title === "string" && record.title.trim().length > 0) {
+    result.title = record.title;
+  }
+  if (typeof record.legend === "string" && record.legend.trim().length > 0) {
+    result.legend = record.legend;
+  }
+  if (typeof record.backgroundUrl === "string" && record.backgroundUrl.trim().length > 0) {
+    result.backgroundUrl = record.backgroundUrl;
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+/** Sustituye los marcadores {{...}} de una plantilla por los datos del diploma. */
+export function fillCertificatePlaceholders(text: string, view: CertificateView): string {
+  return text
+    .replaceAll("{{courseTitle}}", view.courseTitle)
+    .replaceAll("{{studentName}}", view.studentName)
+    .replaceAll("{{folio}}", view.folio)
+    .replaceAll("{{verificationCode}}", view.verificationCode)
+    .replaceAll("{{issuedAt}}", formatDate(view.issuedAt));
+}
+
 export function certificateFolio(userId: string, courseId: string, issuedAt = new Date()) {
   const date = issuedAt.toISOString().slice(0, 10).replaceAll("-", "");
   const hash = createHash("sha256").update(`${userId}:${courseId}:${date}`).digest("hex").slice(0, 8).toUpperCase();
@@ -27,10 +73,19 @@ export function certificateStorageKey(folio: string) {
   return `certificates/generated-on-demand/${folio}.pdf`;
 }
 
-export function renderCertificateHtml(view: CertificateView) {
-  const background = view.backgroundUrl
-    ? `background-image:url('${escapeAttribute(view.backgroundUrl)}');background-size:cover;background-repeat:no-repeat;`
+export function renderCertificateHtml(view: CertificateView, template?: CertificateTemplateBody | null) {
+  const backgroundUrl = template?.backgroundUrl ?? view.backgroundUrl;
+  const background = backgroundUrl
+    ? `background-image:url('${escapeAttribute(backgroundUrl)}');background-size:cover;background-repeat:no-repeat;`
     : "background:#fff;border:8px solid #8B1A1A;";
+
+  // El diseño por defecto se conserva byte a byte cuando no hay plantilla.
+  const titleHtml = template?.title
+    ? escapeHtml(fillCertificatePlaceholders(template.title, view))
+    : `DIPLOMADO EN ${escapeHtml(view.courseTitle).toUpperCase()}`;
+  const legendHtml = template?.legend
+    ? escapeHtml(fillCertificatePlaceholders(template.legend, view))
+    : `Por haber completado satisfactoriamente el programa de capacitación especializada en <strong>${escapeHtml(view.courseTitle)}</strong>, demostrando las competencias y conocimientos necesarios para implementar estrategias efectivas de administración del personal en el sector de seguridad privada.`;
 
   return `<!doctype html>
 <html lang="es">
@@ -53,9 +108,9 @@ html,body{margin:0;padding:0;width:279.4mm;height:215.9mm;font-family:Arial,Helv
 </head>
 <body>
 <div id="diploma">
-  <div class="title">DIPLOMADO EN ${escapeHtml(view.courseTitle).toUpperCase()}</div>
+  <div class="title">${titleHtml}</div>
   <div class="name">${escapeHtml(view.studentName)}</div>
-  <div class="legend">Por haber completado satisfactoriamente el programa de capacitación especializada en <strong>${escapeHtml(view.courseTitle)}</strong>, demostrando las competencias y conocimientos necesarios para implementar estrategias efectivas de administración del personal en el sector de seguridad privada.</div>
+  <div class="legend">${legendHtml}</div>
   <div class="meta">Folio: ${escapeHtml(view.folio)} · Verificación: ${escapeHtml(view.verificationCode)} · Emitido: ${formatDate(view.issuedAt)}</div>
 </div>
 <div class="actions"><button onclick="window.print()">Imprimir / guardar PDF</button></div>
