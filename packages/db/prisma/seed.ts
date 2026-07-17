@@ -330,6 +330,14 @@ async function upsertEnrollment(opts: {
   });
 }
 
+async function upsertPrerequisite(courseId: string, requiresId: string) {
+  return prisma.coursePrerequisite.upsert({
+    where: { courseId_requiresId: { courseId, requiresId } },
+    update: {},
+    create: { courseId, requiresId }
+  });
+}
+
 async function completeLesson(userId: string, lessonId: string, when: Date) {
   return prisma.lessonProgress.upsert({
     where: { userId_lessonId: { userId, lessonId } },
@@ -849,6 +857,33 @@ async function main() {
     enrolledAt: ENROLLED_INTRAMUROS
   });
 
+  // --- Prerrequisitos de curso (Ola 2) ---
+  // Custodia y Seguridad Intramuros exigen haber COMPLETADO Proteccion Ejecutiva.
+  // Marcos ya la completo, asi que para el quedan DESBLOQUEADOS (el e2e de Ola 1
+  // sigue verde), pero el mecanismo queda demostrable para un usuario nuevo.
+  //
+  // Verificacion explicita del invariante del que dependen estos prerrequisitos:
+  // si Marcos no tiene Proteccion COMPLETED, la premisa "quedan desbloqueados para
+  // el" seria falsa; abortamos el seed antes de sembrar datos inconsistentes.
+  const protEnrollment = await prisma.enrollment.findUnique({
+    where: { userId_courseId: { userId: guardia.id, courseId: proteccion.course.id } },
+    select: { status: true }
+  });
+  if (protEnrollment?.status !== "COMPLETED") {
+    throw new Error(
+      `Seed abortado: Marcos deberia tener Proteccion Ejecutiva COMPLETED (esta: ${protEnrollment?.status ?? "sin inscripcion"}). Los prerrequisitos demo asumen ese estado.`
+    );
+  }
+  await upsertPrerequisite(custodia.course.id, proteccion.course.id);
+  await upsertPrerequisite(intramuros.course.id, proteccion.course.id);
+
+  // Racha demo de Marcos: 3 dias activos hasta hoy. No altera su XP (450, que sale
+  // de AchievementEvent) ni ningun campo que el e2e verifique.
+  await prisma.user.update({
+    where: { id: guardia.id },
+    data: { currentStreak: 3, lastActiveDate: new Date() }
+  });
+
   // --- Gamificacion ---
   // Insignias del motor real. Los pasos se dejan genericos (sin course/quiz
   // fijo) porque el otorgamiento vive en los triggers reales por slug; el paso
@@ -968,7 +1003,7 @@ async function main() {
   });
 
   // --- Resumen ---
-  const [users, roles, courses, modules, lessons, quizzes, questions, options, enrollments, progress, attempts, answers, certs, achievements, steps, awards, achEvents, reviews] =
+  const [users, roles, courses, modules, lessons, quizzes, questions, options, enrollments, progress, attempts, answers, certs, achievements, steps, awards, achEvents, reviews, prerequisites] =
     await Promise.all([
       prisma.user.count(),
       prisma.userRole.count(),
@@ -987,7 +1022,8 @@ async function main() {
       prisma.achievementStep.count(),
       prisma.achievementAward.count(),
       prisma.achievementEvent.count(),
-      prisma.courseReview.count()
+      prisma.courseReview.count(),
+      prisma.coursePrerequisite.count()
     ]);
 
   const xpTotal = await prisma.achievementEvent.aggregate({ where: { userId: guardia.id }, _sum: { points: true } });
@@ -1011,7 +1047,8 @@ async function main() {
     achievementSteps: steps,
     achievementAwards: awards,
     achievementEvents: achEvents,
-    courseReviews: reviews
+    courseReviews: reviews,
+    coursePrerequisites: prerequisites
   });
   console.log(`XP total del guardia (AchievementEvent.points): ${xpTotal._sum.points ?? 0}`);
   console.log(`Certificado folio: ${folio}`);

@@ -10,6 +10,13 @@ import {
   detectAscension,
   grantXp
 } from "../lib/gamification.js";
+import {
+  computeCourseLock,
+  computeExamLocked,
+  computeSequentialLessons,
+  computeStreak,
+  isEnrollmentExpired
+} from "../lib/gating.js";
 
 const courseRefSchema = z.object({
   courseRef: z.string().min(1)
@@ -40,6 +47,11 @@ export async function registerCourseRoutes(server: FastifyInstance) {
           where: { userId: auth.userId },
           take: 1
         },
+        prerequisites: {
+          include: {
+            requires: { select: { id: true, title: true } }
+          }
+        },
         _count: {
           select: {
             enrollments: true,
@@ -51,23 +63,38 @@ export async function registerCourseRoutes(server: FastifyInstance) {
       orderBy: [{ publishedAt: "desc" }, { title: "asc" }]
     });
 
+    const completedCourseIds = await completedCourseIdSet(auth.userId);
+    const now = new Date();
+
     const thumbnails = await thumbnailMap(courses.map((course) => course.thumbnailAssetId).filter((id): id is string => Boolean(id)));
 
     return {
-      courses: courses.map((course) => ({
-        id: course.id,
-        title: course.title,
-        slug: course.slug,
-        excerpt: course.excerpt,
-        status: course.status,
-        level: course.level,
-        durationSec: course.durationSec,
-        teacher: course.teacher,
-        thumbnail: course.thumbnailAssetId ? thumbnails.get(course.thumbnailAssetId) ?? null : null,
-        enrolled: course.enrollments.length > 0,
-        progressPercent: decimalToNumber(course.enrollments[0]?.progressPercent ?? null),
-        counts: course._count
-      }))
+      courses: courses.map((course) => {
+        const lock = computeCourseLock(
+          course.prerequisites.map((prereq) => ({ requiresId: prereq.requiresId, requiresTitle: prereq.requires.title })),
+          completedCourseIds
+        );
+        const enrollment = course.enrollments[0] ?? null;
+        return {
+          id: course.id,
+          title: course.title,
+          slug: course.slug,
+          excerpt: course.excerpt,
+          status: course.status,
+          level: course.level,
+          durationSec: course.durationSec,
+          teacher: course.teacher,
+          thumbnail: course.thumbnailAssetId ? thumbnails.get(course.thumbnailAssetId) ?? null : null,
+          enrolled: course.enrollments.length > 0,
+          progressPercent: decimalToNumber(enrollment?.progressPercent ?? null),
+          counts: course._count,
+          // Campos aditivos (Ola 2, Fase A): informativos, sin enforcement.
+          locked: lock.locked,
+          lockReason: lock.lockReason,
+          expiresAt: enrollment?.expiresAt ?? null,
+          expired: isEnrollmentExpired(enrollment?.expiresAt ?? null, now)
+        };
+      })
     };
   });
 
@@ -102,6 +129,11 @@ export async function registerCourseRoutes(server: FastifyInstance) {
         enrollments: {
           where: { userId: auth.userId },
           take: 1
+        },
+        prerequisites: {
+          include: {
+            requires: { select: { id: true, title: true } }
+          }
         },
         modules: {
           orderBy: { position: "asc" },
@@ -142,6 +174,41 @@ export async function registerCourseRoutes(server: FastifyInstance) {
       ? (await thumbnailMap([course.thumbnailAssetId])).get(course.thumbnailAssetId) ?? null
       : null;
 
+    // --- Computo de candados (aditivo, informativo; sin enforcement) ---
+    const now = new Date();
+    const completedCourseIds = await completedCourseIdSet(auth.userId);
+    const lock = computeCourseLock(
+      course.prerequisites.map((prereq) => ({ requiresId: prereq.requiresId, requiresTitle: prereq.requires.title })),
+      completedCourseIds
+    );
+    const prerequisitesView = course.prerequisites.map((prereq) => ({
+      id: prereq.requires.id,
+      title: prereq.requires.title,
+      completed: completedCourseIds.has(prereq.requiresId)
+    }));
+
+    // Disponibilidad secuencial de lecciones, en orden de lectura del curso
+    // (modulos por posicion, lecciones por posicion). Solo informativo.
+    const orderedLessons = course.modules.flatMap((module) =>
+      module.lessons.map((lesson) => ({ id: lesson.id, completed: lesson.progress.length > 0 }))
+    );
+    const lessonGate = new Map(
+      computeSequentialLessons(orderedLessons).map((lesson) => [lesson.id, { available: lesson.available, locked: lesson.locked }])
+    );
+
+    // Examen disponible solo con TODAS las lecciones del curso completas. Se
+    // cuenta desde la base (incluye lecciones sin modulo) para ser consistente
+    // con updateCourseProgress.
+    const [totalLessons, completedLessons] = await Promise.all([
+      getPrisma().lesson.count({ where: { courseId: course.id } }),
+      getPrisma().lessonProgress.count({
+        where: { userId: auth.userId, lesson: { courseId: course.id }, completedAt: { not: null } }
+      })
+    ]);
+    const examLocked = computeExamLocked(totalLessons, completedLessons);
+
+    const enrollment = course.enrollments[0] ?? null;
+
     return {
       course: {
         id: course.id,
@@ -155,12 +222,19 @@ export async function registerCourseRoutes(server: FastifyInstance) {
         durationSec: course.durationSec,
         teacher: course.teacher,
         thumbnail,
-        enrollment: course.enrollments[0]
+        // Campos aditivos (Ola 2, Fase A): informativos, sin enforcement.
+        locked: lock.locked,
+        lockReason: lock.lockReason,
+        examLocked,
+        prerequisites: prerequisitesView,
+        enrollment: enrollment
           ? {
-              status: course.enrollments[0].status,
-              progressPercent: decimalToNumber(course.enrollments[0].progressPercent),
-              enrolledAt: course.enrollments[0].enrolledAt,
-              completedAt: course.enrollments[0].completedAt
+              status: enrollment.status,
+              progressPercent: decimalToNumber(enrollment.progressPercent),
+              enrolledAt: enrollment.enrolledAt,
+              completedAt: enrollment.completedAt,
+              expiresAt: enrollment.expiresAt ?? null,
+              expired: isEnrollmentExpired(enrollment.expiresAt ?? null, now)
             }
           : null,
         modules: course.modules.map((module) => ({
@@ -180,6 +254,9 @@ export async function registerCourseRoutes(server: FastifyInstance) {
             durationSec: lesson.durationSec,
             completed: lesson.progress.length > 0,
             completedAt: lesson.progress[0]?.completedAt ?? null,
+            // Aditivo: bloqueo secuencial informativo.
+            available: lessonGate.get(lesson.id)?.available ?? true,
+            locked: lessonGate.get(lesson.id)?.locked ?? false,
             assets: lesson.assets.map(serializeAsset)
           })),
           quizzes: module.quizzes.map((quiz) => ({
@@ -196,6 +273,8 @@ export async function registerCourseRoutes(server: FastifyInstance) {
             autoStart: quiz.autoStart,
             hideTimeDisplay: quiz.hideTimeDisplay,
             questionCount: quiz.questions.length,
+            // Aditivo: mismo candado de examen a nivel de cada examen del curso.
+            examLocked,
             lastAttempt: quiz.attempts[0] ? serializeAttemptSummary(quiz.attempts[0]) : null
           }))
         }))
@@ -241,6 +320,15 @@ export async function registerCourseRoutes(server: FastifyInstance) {
     }
 
     const completedAt = new Date();
+
+    // Detecta si es la PRIMERA vez que esta leccion se completa: solo entonces la
+    // actividad cuenta para la racha diaria (re-completar no la mueve).
+    const existingProgress = await getPrisma().lessonProgress.findUnique({
+      where: { userId_lessonId: { userId: auth.userId, lessonId: lesson.id } },
+      select: { completedAt: true }
+    });
+    const firstCompletion = !existingProgress || existingProgress.completedAt === null;
+
     const progress = await getPrisma().lessonProgress.upsert({
       where: {
         userId_lessonId: {
@@ -259,6 +347,32 @@ export async function registerCourseRoutes(server: FastifyInstance) {
         lastSeenAt: completedAt
       }
     });
+
+    // Racha diaria: aditiva y robusta. Un fallo aqui nunca debe tumbar el
+    // complete, asi que se aisla en su propio try/catch.
+    if (firstCompletion) {
+      try {
+        const user = await getPrisma().user.findUnique({
+          where: { id: auth.userId },
+          select: { currentStreak: true, lastActiveDate: true }
+        });
+        if (user) {
+          const next = computeStreak({
+            lastActiveDate: user.lastActiveDate,
+            currentStreak: user.currentStreak,
+            now: completedAt
+          });
+          if (next.changed) {
+            await getPrisma().user.update({
+              where: { id: auth.userId },
+              data: { currentStreak: next.currentStreak, lastActiveDate: next.lastActiveDate }
+            });
+          }
+        }
+      } catch (error) {
+        request.log.error({ err: error }, "streak update failed");
+      }
+    }
 
     const courseProgress = await updateCourseProgress(auth.userId, lesson.courseId);
     if (courseProgress.newlyCompleted) {
@@ -418,6 +532,19 @@ async function updateCourseProgress(userId: string, courseId: string) {
     completedAt: updated.completedAt,
     newlyCompleted
   };
+}
+
+/**
+ * Conjunto de courseId que el usuario ya COMPLETO. Base para evaluar los
+ * prerrequisitos de curso (un prereq esta cumplido si el usuario tiene una
+ * inscripcion COMPLETED de ese curso).
+ */
+async function completedCourseIdSet(userId: string): Promise<Set<string>> {
+  const rows = await getPrisma().enrollment.findMany({
+    where: { userId, status: "COMPLETED" },
+    select: { courseId: true }
+  });
+  return new Set(rows.map((row) => row.courseId));
 }
 
 async function thumbnailMap(ids: string[]) {

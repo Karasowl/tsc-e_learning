@@ -23,7 +23,7 @@ export async function registerGamificationRoutes(server: FastifyInstance) {
     const [user, xp, coursesCompleted, coursesInProgress, lessonsCompleted, certificates] = await Promise.all([
       prisma.user.findUnique({
         where: { id: auth.userId },
-        select: { employeeCode: true, serviceLabel: true }
+        select: { employeeCode: true, serviceLabel: true, currentStreak: true, lastActiveDate: true }
       }),
       totalXp(prisma, auth.userId),
       prisma.enrollment.count({ where: { userId: auth.userId, status: "COMPLETED" } }),
@@ -41,6 +41,11 @@ export async function registerGamificationRoutes(server: FastifyInstance) {
       rank: rankInfo(xp),
       employeeCode: user.employeeCode,
       serviceLabel: user.serviceLabel,
+      // Racha diaria (aditivo, Ola 2 Fase A).
+      streak: {
+        current: user.currentStreak,
+        lastActiveDate: user.lastActiveDate
+      },
       counts: {
         coursesCompleted,
         coursesInProgress,

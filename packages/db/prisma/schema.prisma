@@ -29,6 +29,12 @@ enum EnrollmentStatus {
   ACTIVE
   COMPLETED
   SUSPENDED
+  EXPIRED
+}
+
+enum AnnouncementScope {
+  GLOBAL
+  COURSE
 }
 
 enum LessonKind {
@@ -107,6 +113,8 @@ model User {
   sourceSystem       String?
   sourceId           String?
   lastLoginAt        DateTime?
+  currentStreak      Int          @default(0)
+  lastActiveDate     DateTime?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   roles              UserRole[]
@@ -120,6 +128,8 @@ model User {
   courseReviews      CourseReview[]
   invitationTokens   InvitationToken[]
   auditEvents        AuditEvent[]      @relation("AuditActor")
+  authoredAnnouncements Announcement[] @relation("AnnouncementAuthor")
+  notifications      Notification[]
 
   @@unique([sourceSystem, sourceId])
 }
@@ -195,8 +205,27 @@ model Course {
   achievementAwards AchievementAward[]
   reviews         CourseReview[]
   templateLinks   CertificateTemplateCourse[]
+  prerequisites     CoursePrerequisite[] @relation("CoursePrereqOwner")
+  requiredByCourses CoursePrerequisite[] @relation("CoursePrereqRequired")
+  announcements     Announcement[]
 
   @@unique([sourceSystem, sourceId])
+}
+
+// Un prerrequisito de curso: para inscribirse/avanzar en `courseId` (el curso que
+// TIENE el requisito) el usuario debe haber COMPLETADO antes `requiresId`. El
+// computo de candados es aditivo por ahora; el enforcement duro llega en una fase
+// posterior junto a la UI del guardia.
+model CoursePrerequisite {
+  id         String   @id @default(cuid())
+  courseId   String
+  requiresId String
+  createdAt  DateTime @default(now())
+  course     Course   @relation("CoursePrereqOwner", fields: [courseId], references: [id], onDelete: Cascade)
+  requires   Course   @relation("CoursePrereqRequired", fields: [requiresId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, requiresId])
+  @@index([courseId])
 }
 
 model CourseModule {
@@ -266,6 +295,7 @@ model Enrollment {
   progressPercent Decimal          @default(0) @db.Decimal(5, 2)
   enrolledAt      DateTime         @default(now())
   completedAt     DateTime?
+  expiresAt       DateTime?
   sourceSystem    String?
   sourceId        String?
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -546,6 +576,45 @@ model NotificationLog {
   providerId  String?
   status      String
   createdAt   DateTime              @default(now())
+}
+
+// Anuncio publicado por un instructor/admin. GLOBAL (courseId null) aparece para
+// toda la plataforma; COURSE se limita a los inscritos de `courseId`. `publishedAt`
+// null = borrador (aun no visible). El autor se preserva como SetNull.
+model Announcement {
+  id          String            @id @default(cuid())
+  scope       AnnouncementScope @default(COURSE)
+  courseId    String?
+  authorId    String?
+  title       String
+  body        String
+  publishedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  course      Course?           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  author      User?             @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([courseId])
+  @@index([scope, publishedAt])
+}
+
+// Bandeja de notificaciones in-app por usuario. `kind` clasifica el evento
+// (ANNOUNCEMENT / ENROLLMENT / CERTIFICATE / SYSTEM, entre otros). `readAt` null =
+// no leida. `linkType`/`linkId` permiten enlazar a la entidad relacionada.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  kind      String
+  title     String
+  body      String?
+  linkType  String?
+  linkId    String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
 }
 
 model FeatureEvidence {
