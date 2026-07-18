@@ -313,7 +313,30 @@ Se cerraron los huecos que dejaban a cada rol a medias, sobre el motor real:
 ### Sin acción (documentado)
 - Enums muertos `AttemptStatus.SUBMITTED`/`VOIDED`; endpoints sin consumidor `GET /quizzes/attempts/:id` y `/inventory/features`; imágenes públicas por assetId (decisión previa); emails `@tsc.local` del seed rebotarían si se enciende SMTP en demo.
 - Carrera teórica de doble notificación de finalización (paridad con el patrón preexistente) y fetch de fondo de plantilla limitado a admins.
-- Decisiones de producto abiertas: correo masivo de anuncios (sigue solo in-app) y gestión admin de diplomas (emitir/revocar quedó fuera de alcance según backlog). Borrar un anuncio de curso conserva sus avisos in-app (asimetría deliberada, revisable).
+- Decisiones de producto abiertas: correo masivo de anuncios (sigue solo in-app) y gestión admin de diplomas (emitir/revocar quedó fuera de alcance según backlog). Borrar un anuncio de curso conserva sus avisos in-app (asimetría deliberada, revisable). *(Las tres se resolvieron en §10.)*
 
 ### Verificación final (2026-07-17)
 - typecheck monorepo: 0 errores. API: **198/198** tests. Build web: verde. Seed idempotente. **e2e: 30/30** (incluye el spec nuevo de diploma). Revisión independiente: APROBADO_CON_OBSERVACIONES, todas las observaciones importantes y menores corregidas y re-verificadas. Sin push ni deploy.
+
+## 10. Tres decisiones de producto implementadas (2026-07-17, misma rama)
+
+Ismael decidió y se implementó:
+
+### A. Anuncios: solo bandeja in-app, con copia por correo a RH opt-in
+- Publicar un anuncio (curso o global) sigue sembrando SOLO la bandeja in-app de los alumnos. **No hay correo masivo a alumnos** (decisión expresa).
+- Nuevo evento `ANNOUNCEMENT_PUBLISHED` en el motor de reglas de correo (`NotificationEventType`). Si existe una regla habilitada con destinatarios, al publicar se crea un `NotificationLog` dirigido SOLO a esos destinatarios (RH), dentro de la misma transacción del anuncio, con asunto y cuerpo en español (título, alcance curso/plataforma y autor). Sin regla (o deshabilitada, o sin destinatarios) no se crea nada. El worker SMTP lo envía como cualquier log.
+- El evento aparece como "Anuncio publicado" en el select de reglas (Ops Center y vista admin legada).
+
+### B. Gestión admin de diplomas: emitir y revocar
+- `GET /admin/certificates/candidates`: inscripciones COMPLETED sin diploma vigente.
+- `POST /admin/certificates` (admin): emite a nombre de un colaborador reutilizando el MISMO núcleo atómico del autoservicio (`issueCertificateWithinTx`: folio, notificación `CERTIFICATE_ISSUED`, XP +240 idempotente). 409 si no está COMPLETED o si ya tiene diploma vigente.
+- `POST /admin/certificates/:id/revoke` (admin): conserva la fila (`status REVOKED` + `revokedAt`). La verificación pública responde 410 "Este diploma fue revocado y ya no es válido" sin exponer datos del titular. Alumnos e instructores dejan de ver el diploma en listas y su html/pdf responde 410; el admin lo conserva con pill "Revocado". El autoservicio del alumno NO puede re-emitir un diploma revocado (409); solo administración.
+- Reemisión tras revocar: reutiliza la fila (el `@@unique([userId, courseId])` se mantiene) con código de verificación y fecha nuevos y status ISSUED. El folio deriva de colaborador+curso+día, así que solo cambia si la reemisión ocurre en otro día (el mismo día regenera el mismo folio). El XP del diploma revocado NO se resta (ledger histórico) y la reemisión no lo duplica. La reemisión es condicionada dentro de la transacción (solo procede si la fila sigue revocada) y las carreras admin+alumno o admin+admin responden 409, no 500.
+- Ambas acciones en Bitácora: `CERTIFICATE_ISSUED_BY_ADMIN` / `CERTIFICATE_REVOKED`. UI en Ops Center → Diplomas: botón "Emitir diploma" (modal de candidatos) y "Revocar" con confirmación.
+
+### C. Borrar un anuncio de CURSO limpia sus avisos in-app (simetría con globales)
+- Los avisos de anuncios de curso ahora enlazan `linkType "announcement"` + id del anuncio (antes `"course"`, lo que impedía atribuirlos al borrar). Ninguna campana navegaba por `linkType`, así que no hubo que preservar comportamiento.
+- `reset-qa-residues` simplificado (ya no hay huérfanos por título). Migración local: se eliminó 1 aviso histórico con la forma vieja (residuo QA sin anuncio vivo).
+
+### Verificación (2026-07-17, esta ronda)
+- typecheck monorepo: 0 errores. API: **215/215** tests (base 198 + 17 nuevos). Build web: verde. Seed idempotente. e2e: suite completa verde (ver reporte de la ronda). Sin push ni deploy.

@@ -80,6 +80,7 @@ enum NotificationEventType {
   QUIZ_FAILED
   COURSE_COMPLETED
   CERTIFICATE_ISSUED
+  ANNOUNCEMENT_PUBLISHED
 }
 
 enum AchievementStepTrigger {

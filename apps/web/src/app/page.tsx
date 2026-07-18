@@ -1908,6 +1908,7 @@ export default function Home() {
                   <option value="QUIZ_FAILED">Examen reprobado</option>
                   <option value="COURSE_COMPLETED">Curso completado</option>
                   <option value="CERTIFICATE_ISSUED">Diploma emitido</option>
+                  <option value="ANNOUNCEMENT_PUBLISHED">Anuncio publicado</option>
                 </select>
               </label>
               <label>
@@ -1978,7 +1979,8 @@ const NOTIFICATION_EVENT_LABELS: Record<string, string> = {
   QUIZ_PASSED: "Examen aprobado",
   QUIZ_FAILED: "Examen reprobado",
   COURSE_COMPLETED: "Curso completado",
-  CERTIFICATE_ISSUED: "Diploma emitido"
+  CERTIFICATE_ISSUED: "Diploma emitido",
+  ANNOUNCEMENT_PUBLISHED: "Anuncio publicado"
 };
 
 const NOTIFICATION_STATUS_LABELS: Record<string, string> = {
@@ -2069,7 +2071,7 @@ function GoogleSignIn({
 
 type VerifyResult =
   | { valid: true; folio: string; issuedAt: string; studentName: string; courseTitle: string }
-  | { valid: false };
+  | { valid: false; revoked?: boolean };
 
 function DiplomaVerifier() {
   const [open, setOpen] = useState(false);
@@ -2090,6 +2092,9 @@ function DiplomaVerifier() {
       if (response.ok) {
         const data = (await response.json()) as { certificate: Omit<VerifyResult & { valid: true }, "valid"> };
         setResult({ valid: true, ...data.certificate });
+      } else if (response.status === 410) {
+        // El código existe pero el diploma fue revocado: se dice de frente.
+        setResult({ valid: false, revoked: true });
       } else {
         setResult({ valid: false });
       }
@@ -2134,7 +2139,11 @@ function DiplomaVerifier() {
           <p className="muted"><small>Folio {result.folio} · {new Date(result.issuedAt).toLocaleDateString("es-MX")}</small></p>
         </div>
       ) : result?.valid === false ? (
-        <p className="error-line">No encontramos un diploma con ese código.</p>
+        <p className="error-line">
+          {result.revoked
+            ? "Este diploma fue revocado y ya no es válido."
+            : "No encontramos un diploma con ese código."}
+        </p>
       ) : null}
     </div>
   );

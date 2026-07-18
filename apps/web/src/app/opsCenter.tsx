@@ -1610,19 +1610,34 @@ function metricClass(label: string): string {
   return "";
 }
 
-// ─── DIPLOMAS: diplomas emitidos reales (ver / descargar) ───────────────────
+// ─── DIPLOMAS: emitidos reales (ver / descargar) + emisión y revocación admin ─
 type Certificate = {
   id: string;
+  status: string;
   folio: string;
   issuedAt: string;
+  revokedAt: string | null;
   user: { displayName: string; email: string };
   course: { title: string };
+};
+
+// Candidato a emisión admin: inscripción COMPLETED sin diploma vigente.
+type DiplomaCandidate = {
+  userId: string;
+  displayName: string;
+  email: string;
+  courseId: string;
+  courseTitle: string;
 };
 
 function OpsDiplomas({ token }: { token: string }) {
   const [certs, setCerts] = useState<Certificate[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [candidates, setCandidates] = useState<DiplomaCandidate[]>([]);
+  const [candidatesReady, setCandidatesReady] = useState(false);
+  const [selected, setSelected] = useState("");
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -1662,15 +1677,79 @@ function OpsDiplomas({ token }: { token: string }) {
     }
   }
 
+  async function openIssue() {
+    setIssueOpen(true);
+    setSelected("");
+    setCandidatesReady(false);
+    try {
+      const data = await authFetch<{ candidates: DiplomaCandidate[] }>(token, "/admin/certificates/candidates");
+      setCandidates(data.candidates);
+    } catch (candidatesError) {
+      toast.error(errorText(candidatesError));
+      setCandidates([]);
+    } finally {
+      setCandidatesReady(true);
+    }
+  }
+
+  async function issue() {
+    const candidate = candidates.find((row) => `${row.userId}:${row.courseId}` === selected);
+    if (!candidate) {
+      toast.error("Elige al colaborador y el curso del diploma.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await authFetch(token, "/admin/certificates", {
+        method: "POST",
+        body: JSON.stringify({ userId: candidate.userId, courseId: candidate.courseId })
+      });
+      toast.success(`Diploma emitido a ${candidate.displayName}.`);
+      setIssueOpen(false);
+      await load();
+    } catch (issueError) {
+      toast.error(errorText(issueError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(cert: Certificate) {
+    const confirmed = await confirmDialog({
+      title: "Revocar diploma",
+      message: `El diploma quedará invalidado y la verificación pública lo mostrará como revocado. Colaborador: ${cert.user.displayName}. Curso: ${cert.course.title}.`,
+      confirmLabel: "Revocar",
+      danger: true
+    });
+    if (!confirmed) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await authFetch(token, `/admin/certificates/${cert.id}/revoke`, { method: "POST", body: "{}" });
+      toast.success("Diploma revocado.");
+      await load();
+    } catch (revokeError) {
+      toast.error(errorText(revokeError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <OpsCertificateTemplates token={token} />
       <section className="data-section ops-diplomas">
       <div className="section-header">
         <h2>Diplomas emitidos</h2>
-        <button className="icon-button" disabled={busy} onClick={() => void load()} title="Actualizar" type="button">
-          <RefreshCw aria-hidden />
-        </button>
+        <div className="quiz-actions">
+          <button className="secondary-button" disabled={busy} onClick={() => void openIssue()} type="button">
+            <Award aria-hidden /> Emitir diploma
+          </button>
+          <button className="icon-button" disabled={busy} onClick={() => void load()} title="Actualizar" type="button">
+            <RefreshCw aria-hidden />
+          </button>
+        </div>
       </div>
 
       {error ? <p className="error-line">{error}</p> : null}
@@ -1686,7 +1765,13 @@ function OpsDiplomas({ token }: { token: string }) {
                 <strong>{cert.course.title}</strong>
                 <span>{cert.user.displayName}</span>
                 <span className="mono-label">{cert.folio}</span>
-                <small>{new Date(cert.issuedAt).toLocaleDateString("es-MX")}</small>
+                <small>
+                  {new Date(cert.issuedAt).toLocaleDateString("es-MX")}
+                  {cert.status === "REVOKED" && cert.revokedAt
+                    ? ` · Revocado el ${new Date(cert.revokedAt).toLocaleDateString("es-MX")}`
+                    : ""}
+                </small>
+                {cert.status === "REVOKED" ? <span className="status-pill disabled">Revocado</span> : null}
               </div>
               <div className="tile-actions">
                 <button className="icon-button" onClick={() => void view(cert.id)} title="Ver diploma" type="button">
@@ -1695,12 +1780,61 @@ function OpsDiplomas({ token }: { token: string }) {
                 <button className="icon-button" onClick={() => void download(cert.id, cert.folio)} title="Descargar PDF" type="button">
                   <Download aria-hidden />
                 </button>
+                {cert.status === "REVOKED" ? null : (
+                  <button
+                    className="icon-button"
+                    disabled={busy}
+                    onClick={() => void revoke(cert)}
+                    title="Revocar diploma"
+                    aria-label="Revocar diploma"
+                    type="button"
+                  >
+                    <Trash2 aria-hidden />
+                  </button>
+                )}
               </div>
             </article>
           ))}
         </div>
       )}
       </section>
+
+      {issueOpen ? (
+        <Modal onClose={() => setIssueOpen(false)} title="Emitir diploma">
+          <div className="ops-issue-diploma">
+            <p className="muted">
+              Solo aparecen colaboradores que completaron un curso y todavía no tienen su diploma vigente.
+            </p>
+            {!candidatesReady ? (
+              <p className="muted">Buscando colaboradores...</p>
+            ) : candidates.length === 0 ? (
+              <p className="empty-state">No hay diplomas pendientes por emitir.</p>
+            ) : (
+              <>
+                <label>
+                  Colaborador y curso
+                  <select value={selected} onChange={(event) => setSelected(event.target.value)}>
+                    <option value="">Elige una opción</option>
+                    {candidates.map((candidate) => (
+                      <option key={`${candidate.userId}:${candidate.courseId}`} value={`${candidate.userId}:${candidate.courseId}`}>
+                        {candidate.displayName} · {candidate.courseTitle}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="quiz-actions">
+                  <button className="primary-button" disabled={busy || !selected} onClick={() => void issue()} type="button">
+                    <Award aria-hidden /> Emitir diploma
+                  </button>
+                  <button className="ghost-button" disabled={busy} onClick={() => setIssueOpen(false)} type="button">
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </Modal>
+      ) : null}
     </>
   );
 }
@@ -2209,7 +2343,8 @@ const NOTIFICATION_EVENT_LABELS: Record<string, string> = {
   QUIZ_PASSED: "Examen aprobado",
   QUIZ_FAILED: "Examen reprobado",
   COURSE_COMPLETED: "Curso completado",
-  CERTIFICATE_ISSUED: "Diploma emitido"
+  CERTIFICATE_ISSUED: "Diploma emitido",
+  ANNOUNCEMENT_PUBLISHED: "Anuncio publicado"
 };
 const NOTIFICATION_STATUS_LABELS: Record<string, string> = {
   PENDING: "Pendiente",
@@ -2430,6 +2565,7 @@ function OpsNotifications({ token }: { token: string }) {
             <option value="QUIZ_FAILED">Examen reprobado</option>
             <option value="COURSE_COMPLETED">Curso completado</option>
             <option value="CERTIFICATE_ISSUED">Diploma emitido</option>
+            <option value="ANNOUNCEMENT_PUBLISHED">Anuncio publicado</option>
           </select>
         </label>
         <label>
@@ -2591,7 +2727,11 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   ENROLLMENT_GRANTED: "Inscripción",
   ENROLLMENT_REVOKED: "Acceso revocado",
   ENROLLMENT_BULK_UPDATED: "Ajuste masivo de acceso",
-  ANNOUNCEMENT_PUBLISHED: "Anuncio publicado"
+  ANNOUNCEMENT_PUBLISHED: "Anuncio publicado",
+  NOTIFICATION_RULE_UPDATED: "Regla de correo actualizada",
+  NOTIFICATION_RULE_DELETED: "Regla de correo eliminada",
+  CERTIFICATE_ISSUED_BY_ADMIN: "Diploma emitido por administración",
+  CERTIFICATE_REVOKED: "Diploma revocado"
 };
 
 function OpsAudit({ token }: { token: string }) {

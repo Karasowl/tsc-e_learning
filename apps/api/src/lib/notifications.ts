@@ -88,6 +88,69 @@ export async function emitStudentNotification(
   });
 }
 
+/**
+ * Emits at most ONE NotificationLog when an announcement is published.
+ *
+ * Product decision (2026-07-17): announcements live in the in-app inbox only.
+ * Students are NEVER mailed. The email copy exists solely for RH/admin and only
+ * when an enabled ANNOUNCEMENT_PUBLISHED NotificationRule with recipients is
+ * configured. With no matching enabled rule (or no usable recipients) nothing is
+ * created: unlike student-facing events, there is no audit-log requirement here
+ * because the announcement row itself is the record.
+ *
+ * `client` lets the caller run this inside the same transaction that creates the
+ * announcement, so the email copy never references an announcement that failed
+ * to persist. Returns true when a log was created.
+ */
+export async function emitAnnouncementPublishedNotification(
+  args: {
+    announcementId: string;
+    title: string;
+    scope: "GLOBAL" | "COURSE";
+    courseId: string | null;
+    courseTitle: string | null;
+    authorName: string | null;
+  },
+  client: Prisma.TransactionClient = getPrisma()
+): Promise<boolean> {
+  const rules = await client.notificationRule.findMany({
+    where: { eventType: "ANNOUNCEMENT_PUBLISHED", enabled: true }
+  });
+
+  const recipients = new Set<string>();
+  for (const rule of rules) {
+    for (const recipient of rule.recipients) {
+      const normalized = recipient?.trim();
+      if (normalized) {
+        recipients.add(normalized.toLowerCase());
+      }
+    }
+  }
+
+  if (recipients.size === 0) {
+    return false;
+  }
+
+  await client.notificationLog.create({
+    data: {
+      eventType: "ANNOUNCEMENT_PUBLISHED",
+      userId: null,
+      courseId: args.courseId,
+      payload: {
+        announcementId: args.announcementId,
+        announcementTitle: args.title,
+        scope: args.scope,
+        ...(args.courseTitle ? { courseTitle: args.courseTitle } : {}),
+        ...(args.authorName ? { authorName: args.authorName } : {}),
+        ruleId: rules[0]!.id
+      },
+      sentTo: Array.from(recipients),
+      status: "PENDING"
+    }
+  });
+  return true;
+}
+
 export async function processPendingNotifications(
   provider: EmailProvider,
   options: { limit?: number } = {}
@@ -163,6 +226,8 @@ function defaultSubject(eventType: NotificationEventType, payload: Record<string
       return `Curso completado: ${stringValue(payload.courseTitle) ?? "curso"}`;
     case "CERTIFICATE_ISSUED":
       return `Certificado emitido: ${stringValue(payload.folio) ?? "TSC"}`;
+    case "ANNOUNCEMENT_PUBLISHED":
+      return `Anuncio publicado: ${stringValue(payload.announcementTitle) ?? "plataforma de capacitación"}`;
   }
 }
 
@@ -202,6 +267,20 @@ ${courseLine}${scoreLine}
     }
     case "CERTIFICATE_ISSUED":
       return `<p><strong>Certificado emitido</strong></p><p>Folio: ${escapeHtml(stringValue(payload.folio) ?? "")}</p><p>Código de verificación: ${escapeHtml(stringValue(payload.verificationCode) ?? "")}</p>`;
+    case "ANNOUNCEMENT_PUBLISHED": {
+      const announcementTitle = escapeHtml(stringValue(payload.announcementTitle) ?? "Anuncio");
+      const courseTitle = stringValue(payload.courseTitle);
+      const scopeLine =
+        stringValue(payload.scope) === "COURSE" && courseTitle
+          ? `<p>Alcance: curso <strong>${escapeHtml(courseTitle)}</strong>.</p>`
+          : "<p>Alcance: toda la plataforma.</p>";
+      const authorName = stringValue(payload.authorName);
+      const authorLine = authorName ? `<p>Publicado por: ${escapeHtml(authorName)}.</p>` : "";
+      return `<p>Hola:</p>
+<p>Se publicó el anuncio <strong>${announcementTitle}</strong> en la plataforma de capacitación.</p>
+${scopeLine}${authorLine}
+<p>Un saludo,<br />El equipo de capacitación TSC</p>`;
+    }
   }
 }
 

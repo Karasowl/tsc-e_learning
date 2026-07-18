@@ -57,6 +57,9 @@ PDF del reporte, reemplazo del RichTextEditor (execCommand), pulido de marca (em
 calificación manual (solo 3 tipos reales), builder de plantillas de diploma y revocación de certificado,
 motor de puntos GamiPress, marketplace/pagos/withdrawals, Q&A/anuncios/wishlist/reseñas, social login
 Nextend, prerequisitos/drip/become-instructor.
+*(Nota 2026-07-17: varios de estos se construyeron después como mejoras propias, no por paridad WP:
+plantillas de diploma, anuncios, reseñas, prerrequisitos, gamificación propia, y emisión/revocación
+admin de diplomas. Ver docs/REDISENO-FLUJOS.md §8-§10.)*
 
 ### Estado de la iteración (2026-06-15)
 - ✅ **P0-1 Correo al estudiante + copia a RH** — implementado (un solo `NotificationLog` con `sentTo`

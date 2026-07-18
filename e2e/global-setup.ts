@@ -13,10 +13,10 @@ import { seedRoleStorageStates } from "./auth-session";
  *  2. Borra los residuos de QA: el usuario de invitación (qa.invite@tsc.local,
  *     que queda ACTIVE al activarse y el endpoint rechaza re-invitar cuentas
  *     activas con 409) y los anuncios QA "Simulacro ..." con sus avisos in-app
- *     (admin-ola2 publica un anuncio global que no se borra a sí mismo, y los
- *     avisos de anuncios de curso sobreviven al borrado del anuncio por diseño
- *     del producto). Así el roster, la lista de anuncios y las campanas no
- *     crecen corrida tras corrida.
+ *     (admin-ola2 publica un anuncio global que no se borra a sí mismo; el
+ *     borrado del producto ya limpia los avisos de cualquier anuncio, curso o
+ *     global). Así el roster, la lista de anuncios y las campanas no crecen
+ *     corrida tras corrida.
  *
  *  3. Loguea cada rol (admin/instructor/guardia) UNA vez vía API y persiste su
  *     storageState (localStorage tsc_token/tsc_user). Los specs reutilizan ese

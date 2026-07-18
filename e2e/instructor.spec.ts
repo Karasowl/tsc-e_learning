@@ -233,9 +233,9 @@ test.describe("instructor · Fase D Ola 2 (1280x800)", () => {
     await page.locator(".tconsole-tab", { hasText: "Anuncios" }).click();
     await expect(page.getByRole("heading", { name: "Anuncios del curso" })).toBeVisible();
 
-    // Título FIJO: el spec borra su anuncio al final, y si una corrida muere a
-    // mitad, el global-setup (db:reset-qa-residues) limpia el anuncio y los
-    // avisos in-app de curso que el borrado del anuncio conserva por diseño.
+    // Título FIJO: el spec borra su anuncio al final (el DELETE del producto
+    // limpia también sus avisos in-app), y si una corrida muere a mitad, el
+    // global-setup (db:reset-qa-residues) elimina el anuncio con sus avisos.
     const annTitle = "Simulacro nocturno (QA)";
     const form = page.locator(".tconsole-anuncio-form");
     await form.getByLabel("Título").fill(annTitle);

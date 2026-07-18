@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { blocksManualActivation, dedupeEarnedBadges } from "./users-admin.js";
+import { blocksManualActivation, dedupeEarnedBadges, serializeDossierCertificates } from "./users-admin.js";
 
 describe("blocksManualActivation (sin credencial utilizable no hay paso manual a ACTIVE)", () => {
   it("bloquea el paso a ACTIVE sin passwordHash ni hash legado (invitado sin activar)", () => {
@@ -69,5 +69,44 @@ describe("dedupeEarnedBadges (expediente de usuario)", () => {
     ]);
     assert.equal(badges.length, 2);
     assert.deepEqual(badges.map((b) => b.slug).sort(), ["s1", "s2"]);
+  });
+});
+
+describe("serializeDossierCertificates (diplomas del expediente admin)", () => {
+  it("incluye los revocados con su status y fecha para la pill 'Revocado' de la UI", () => {
+    const issuedAt = new Date("2026-05-15T00:00:00Z");
+    const revokedAt = new Date("2026-07-17T00:00:00Z");
+    const rows = serializeDossierCertificates([
+      {
+        id: "cert1",
+        status: "ISSUED",
+        folio: "TSC-20260515-AAAA1111",
+        issuedAt,
+        revokedAt: null,
+        course: { id: "c1", title: "Protección" }
+      },
+      {
+        id: "cert2",
+        status: "REVOKED",
+        folio: "TSC-20260601-BBBB2222",
+        issuedAt,
+        revokedAt,
+        course: { id: "c2", title: "Custodia" }
+      }
+    ]);
+
+    assert.equal(rows.length, 2);
+    assert.deepEqual(rows[0], {
+      id: "cert1",
+      status: "ISSUED",
+      folio: "TSC-20260515-AAAA1111",
+      issuedAt,
+      revokedAt: null,
+      courseId: "c1",
+      courseTitle: "Protección"
+    });
+    assert.equal(rows[1]!.status, "REVOKED");
+    assert.equal(rows[1]!.revokedAt, revokedAt);
+    assert.equal(rows[1]!.courseTitle, "Custodia");
   });
 });

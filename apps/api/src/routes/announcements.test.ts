@@ -14,7 +14,9 @@ describe("announcementNotificationCleanupWhere (borrado de anuncio limpia su ban
     });
   });
 
-  it("coincide con el linkType/linkId que siembra el anuncio global", () => {
+  it("coincide con el linkType/linkId que siembran los anuncios (curso y global por igual)", () => {
+    // Desde 2026-07-17 el anuncio de CURSO también enlaza sus avisos al id del
+    // anuncio (antes enlazaba al curso y el DELETE no podía atribuirlos).
     const rows = buildAnnouncementNotifications({
       userIds: ["u1"],
       title: "t",
@@ -34,8 +36,8 @@ describe("buildAnnouncementNotifications", () => {
       userIds: ["u1", "u2"],
       title: "Nuevo módulo",
       body: "Ya está disponible el módulo 3.",
-      linkType: "course",
-      linkId: "c1"
+      linkType: "announcement",
+      linkId: "a1"
     });
 
     assert.equal(rows.length, 2);
@@ -43,8 +45,8 @@ describe("buildAnnouncementNotifications", () => {
       assert.equal(row.kind, "ANNOUNCEMENT");
       assert.equal(row.title, "Nuevo módulo");
       assert.equal(row.body, "Ya está disponible el módulo 3.");
-      assert.equal(row.linkType, "course");
-      assert.equal(row.linkId, "c1");
+      assert.equal(row.linkType, "announcement");
+      assert.equal(row.linkId, "a1");
     }
     assert.deepEqual(
       rows.map((row) => row.userId),
@@ -68,7 +70,7 @@ describe("buildAnnouncementNotifications", () => {
 
   it("no crea filas cuando no hay destinatarios", () => {
     assert.deepEqual(
-      buildAnnouncementNotifications({ userIds: [], title: "t", body: "b", linkType: "course", linkId: "c1" }),
+      buildAnnouncementNotifications({ userIds: [], title: "t", body: "b", linkType: "announcement", linkId: "a1" }),
       []
     );
   });

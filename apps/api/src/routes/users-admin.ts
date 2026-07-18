@@ -156,12 +156,17 @@ export async function registerUserAdminRoutes(server: FastifyInstance, config: A
           }
         },
         certificates: {
-          where: { status: "ISSUED" },
+          // Superficie SOLO de admin: incluye también los revocados, con su
+          // status, para que el expediente los muestre con pill "Revocado"
+          // (coherente con OpsDiplomas). Las listas del alumno siguen
+          // filtrando a ISSUED en /certificates.
           orderBy: { issuedAt: "desc" },
           select: {
             id: true,
+            status: true,
             folio: true,
             issuedAt: true,
+            revokedAt: true,
             course: { select: { id: true, title: true } }
           }
         },
@@ -221,13 +226,7 @@ export async function registerUserAdminRoutes(server: FastifyInstance, config: A
         expiresAt: enrollment.expiresAt,
         expired: isEnrollmentExpired(enrollment.expiresAt, now)
       })),
-      certificates: user.certificates.map((certificate) => ({
-        id: certificate.id,
-        folio: certificate.folio,
-        issuedAt: certificate.issuedAt,
-        courseId: certificate.course.id,
-        courseTitle: certificate.course.title
-      })),
+      certificates: serializeDossierCertificates(user.certificates),
       badges: dedupeEarnedBadges(user.achievementAwards),
       auditEvents: auditEvents.map((event) => ({
         id: event.id,
@@ -615,6 +614,33 @@ export function blocksManualActivation(input: {
 }
 
 export type EarnedBadge = { slug: string; title: string; points: number; awardedAt: Date };
+
+/**
+ * Serializa (puro) los diplomas del expediente admin. Incluye los revocados con
+ * su status y fecha de revocación: el expediente es superficie exclusiva de
+ * admin y debe contar la historia completa (pill "Revocado" en la UI), a
+ * diferencia de las listas del alumno que solo muestran diplomas vigentes.
+ */
+export function serializeDossierCertificates(
+  certificates: Array<{
+    id: string;
+    status: string;
+    folio: string;
+    issuedAt: Date;
+    revokedAt: Date | null;
+    course: { id: string; title: string };
+  }>
+) {
+  return certificates.map((certificate) => ({
+    id: certificate.id,
+    status: certificate.status,
+    folio: certificate.folio,
+    issuedAt: certificate.issuedAt,
+    revokedAt: certificate.revokedAt,
+    courseId: certificate.course.id,
+    courseTitle: certificate.course.title
+  }));
+}
 
 /**
  * Colapsa los awards de un usuario a una insignia por logro, conservando la

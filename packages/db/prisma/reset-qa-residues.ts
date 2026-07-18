@@ -12,15 +12,14 @@
  *    deleteMany. AuditEvent usa SetNull y conserva la bitacora.
  *
  * 2. Anuncios QA ("Simulacro de gobierno ..." de admin-ola2.spec y "Simulacro
- *    nocturno ..." de instructor.spec) y sus avisos in-app. El spec del
- *    instructor borra su anuncio de curso al final, pero el producto conserva a
- *    proposito los avisos in-app de anuncios de curso (enlazan linkType
- *    "course", ver announcements.ts), y el anuncio GLOBAL de admin-ola2 no se
- *    borra a si mismo. Se eliminan primero las Notification (por linkId de los
- *    anuncios QA y por titulo QA para las huerfanas de anuncios de curso ya
- *    borrados) y despues los Announcement (sin FK entrante desde Notification;
- *    course/author usan Cascade/SetNull). El anuncio sembrado ("Lineamientos de
- *    uso de la plataforma") no coincide con el patron y queda intacto.
+ *    nocturno ..." de instructor.spec) y sus avisos in-app. Todo anuncio (curso
+ *    o global) siembra sus avisos con linkType "announcement" + su id, y el
+ *    DELETE del producto ya limpia esos avisos junto con el anuncio. Aqui solo
+ *    queda cubrir los anuncios QA que ningun spec borra (el GLOBAL de
+ *    admin-ola2) o que quedaron a medias por una corrida abortada: se eliminan
+ *    primero sus Notification (por linkId) y despues los Announcement. El
+ *    anuncio sembrado ("Lineamientos de uso de la plataforma") no coincide con
+ *    el patron y queda intacto.
  *
  * Correr:  pnpm --filter @tsc-capacita/db run db:reset-qa-residues
  */
@@ -84,16 +83,10 @@ async function main() {
   });
   const qaAnnouncementIds = qaAnnouncements.map((row) => row.id);
 
+  // Avisos de los anuncios QA aun presentes (curso y global enlazan igual:
+  // linkType "announcement" + id del anuncio).
   const removedNotifications = await prisma.notification.deleteMany({
-    where: {
-      OR: [
-        // Avisos de los anuncios QA globales aun presentes (linkId = anuncio).
-        { linkType: "announcement", linkId: { in: qaAnnouncementIds } },
-        // Avisos huerfanos por titulo QA (p. ej. de anuncios de curso que el
-        // spec del instructor ya borro, cuyos avisos enlazan al curso).
-        { kind: "ANNOUNCEMENT", OR: titleFilters }
-      ]
-    }
+    where: { linkType: "announcement", linkId: { in: qaAnnouncementIds } }
   });
 
   const removedAnnouncements = await prisma.announcement.deleteMany({

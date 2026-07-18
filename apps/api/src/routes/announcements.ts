@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { isAdmin, isTeacherOrAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
 import { logAdminAction } from "../lib/audit.js";
+import { emitAnnouncementPublishedNotification } from "../lib/notifications.js";
 
 const courseIdSchema = z.object({
   courseId: z.string().min(1)
@@ -127,9 +128,10 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
       return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
-    // El anuncio y su siembra en la bandeja in-app son atómicos: no puede quedar
-    // un anuncio publicado sin avisos (ni avisos de un anuncio que no se creó).
-    const { announcement, notifications } = await getPrisma().$transaction(async (tx) => {
+    // El anuncio, su siembra en la bandeja in-app y la copia por correo a RH son
+    // atómicos: no puede quedar un anuncio publicado sin avisos (ni avisos de un
+    // anuncio que no se creó).
+    const { announcement, notifications, emailedRh } = await getPrisma().$transaction(async (tx) => {
       const created = await tx.announcement.create({
         data: {
           scope: "COURSE",
@@ -145,9 +147,11 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
         }
       });
 
-      // Bandeja in-app: un aviso por estudiante inscrito vigente. El correo masivo de
-      // anuncios NO se envía aquí.
-      // TODO: correo-masivo de anuncios es decisión de producto pendiente.
+      // Bandeja in-app: un aviso por estudiante inscrito vigente, enlazado al
+      // anuncio (linkType "announcement", igual que los globales) para que el
+      // borrado del anuncio pueda limpiar sus avisos. Decisión de producto
+      // (2026-07-17): a los alumnos NO se les envía correo masivo de anuncios;
+      // la única copia por correo es la de RH vía regla ANNOUNCEMENT_PUBLISHED.
       const recipients = await tx.enrollment.findMany({
         where: { courseId: course.id, status: { in: ["ACTIVE", "COMPLETED"] } },
         select: { userId: true }
@@ -156,14 +160,27 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
         userIds: recipients.map((row) => row.userId),
         title: created.title,
         body: created.body,
-        linkType: "course",
-        linkId: course.id
+        linkType: "announcement",
+        linkId: created.id
       });
       if (rows.length > 0) {
         await tx.notification.createMany({ data: rows });
       }
 
-      return { announcement: created, notifications: rows };
+      // Copia por correo a RH: solo si hay una regla habilitada para el evento.
+      const emailedRh = await emitAnnouncementPublishedNotification(
+        {
+          announcementId: created.id,
+          title: created.title,
+          scope: "COURSE",
+          courseId: course.id,
+          courseTitle: course.title,
+          authorName: created.author?.displayName ?? null
+        },
+        tx
+      );
+
+      return { announcement: created, notifications: rows, emailedRh };
     });
 
     await logAdminAction({
@@ -172,7 +189,7 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
       summary: `Publicó el anuncio '${announcement.title}' en ${course.title}`,
       targetType: "announcement",
       targetId: announcement.id,
-      metadata: { scope: "COURSE", courseId: course.id, notified: notifications.length },
+      metadata: { scope: "COURSE", courseId: course.id, notified: notifications.length, emailedRh },
       logger: request.log
     });
 
@@ -233,8 +250,8 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
       return reply.code(400).send({ error: body.error.flatten() });
     }
 
-    // Atómico igual que el anuncio de curso: anuncio + bandeja o nada.
-    const { announcement, notifications } = await getPrisma().$transaction(async (tx) => {
+    // Atómico igual que el anuncio de curso: anuncio + bandeja + copia RH o nada.
+    const { announcement, notifications, emailedRh } = await getPrisma().$transaction(async (tx) => {
       const created = await tx.announcement.create({
         data: {
           scope: "GLOBAL",
@@ -250,7 +267,9 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
         }
       });
 
-      // TODO: correo-masivo de anuncios es decisión de producto pendiente.
+      // Decisión de producto (2026-07-17): los anuncios viven en la bandeja
+      // in-app; a los alumnos no se les envía correo masivo. La única copia por
+      // correo es la de RH vía regla ANNOUNCEMENT_PUBLISHED.
       const students = await tx.user.findMany({
         where: { roles: { some: { role: "STUDENT" } } },
         select: { id: true }
@@ -266,7 +285,19 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
         await tx.notification.createMany({ data: rows });
       }
 
-      return { announcement: created, notifications: rows };
+      const emailedRhCopy = await emitAnnouncementPublishedNotification(
+        {
+          announcementId: created.id,
+          title: created.title,
+          scope: "GLOBAL",
+          courseId: null,
+          courseTitle: null,
+          authorName: created.author?.displayName ?? null
+        },
+        tx
+      );
+
+      return { announcement: created, notifications: rows, emailedRh: emailedRhCopy };
     });
 
     await logAdminAction({
@@ -275,7 +306,7 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
       summary: `Publicó el anuncio '${announcement.title}' en toda la plataforma`,
       targetType: "announcement",
       targetId: announcement.id,
-      metadata: { scope: "GLOBAL", notified: notifications.length },
+      metadata: { scope: "GLOBAL", notified: notifications.length, emailedRh },
       logger: request.log
     });
 
@@ -317,8 +348,8 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
     }
 
     // Borra el anuncio junto con los avisos in-app que nacieron de él (los que
-    // enlazan linkType "announcement" + su id). Los avisos de anuncios de curso
-    // enlazan al curso (linkType "course"), así que no hay filas que limpiar ahí.
+    // enlazan linkType "announcement" + su id). Aplica igual a GLOBAL y COURSE:
+    // ambos scopes siembran sus avisos con el id del anuncio.
     await getPrisma().$transaction([
       getPrisma().notification.deleteMany({ where: announcementNotificationCleanupWhere(announcement.id) }),
       getPrisma().announcement.delete({ where: { id: announcement.id } })

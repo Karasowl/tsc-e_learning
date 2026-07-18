@@ -9,7 +9,7 @@ import { processPendingNotifications } from "../lib/notifications.js";
 import { isAdmin, requireAuth } from "../lib/auth.js";
 
 const notificationRuleSchema = z.object({
-  eventType: z.enum(["QUIZ_PASSED", "QUIZ_FAILED", "COURSE_COMPLETED", "CERTIFICATE_ISSUED"]),
+  eventType: z.enum(["QUIZ_PASSED", "QUIZ_FAILED", "COURSE_COMPLETED", "CERTIFICATE_ISSUED", "ANNOUNCEMENT_PUBLISHED"]),
   recipients: z.array(z.string().email()).min(1),
   subject: z.string().min(1),
   enabled: z.boolean().default(true)

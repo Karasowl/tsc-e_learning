@@ -642,7 +642,15 @@ type DossierEnrollment = {
   expiresAt: string | null;
   expired: boolean;
 };
-type DossierCertificate = { id: string; folio: string; issuedAt: string; courseId: string; courseTitle: string };
+type DossierCertificate = {
+  id: string;
+  status: string;
+  folio: string;
+  issuedAt: string;
+  revokedAt: string | null;
+  courseId: string;
+  courseTitle: string;
+};
 type DossierBadge = { slug: string; title: string; points: number; awardedAt: string };
 type DossierAuditEvent = { id: string; action: string; summary: string; createdAt: string; actor: string | null };
 type Dossier = {
@@ -675,7 +683,9 @@ const DOSSIER_AUDIT_LABELS: Record<string, string> = {
   USER_PASSWORD_RESET: "Contraseña restablecida",
   ENROLLMENT_GRANTED: "Inscripción",
   ENROLLMENT_REVOKED: "Acceso revocado",
-  ENROLLMENT_BULK_UPDATED: "Ajuste masivo de inscripciones"
+  ENROLLMENT_BULK_UPDATED: "Ajuste masivo de inscripciones",
+  CERTIFICATE_ISSUED_BY_ADMIN: "Diploma emitido por administración",
+  CERTIFICATE_REVOKED: "Diploma revocado"
 };
 
 function humanizeAction(value: string) {
@@ -851,6 +861,7 @@ function UserDossier({ token, userId, onClose }: { token: string; userId: string
                     <div>
                       <strong>{cert.courseTitle}</strong>
                       <span className="mono-label">{cert.folio}</span>
+                      {cert.status === "REVOKED" ? <span className="status-pill disabled">Revocado</span> : null}
                     </div>
                     <time className="mono-label" dateTime={cert.issuedAt}>
                       {new Date(cert.issuedAt).toLocaleDateString("es-MX")}
