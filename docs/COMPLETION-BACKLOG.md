@@ -106,11 +106,11 @@ Nextend, prerequisitos/drip/become-instructor.
 - [x] **Reproductor de lección**: navegación Anterior/Siguiente entre lecciones + barra de progreso animada (M1). (Autoavance e íconos por tipo: pendientes menores.)
 - [x] **Resultado de examen rico**: tarjeta aprobado/reprobado clara, puntaje grande, botón **Reintentar**, sin enum crudo (`QuizResult`); icono de cerrar corregido (X).
 - [x] **Búsqueda + filtros** en catálogo del estudiante (todos / en progreso / sin iniciar / aprobados) con buscador en vivo y estado "sin resultados".
-- [ ] Soporte de video más allá de YouTube (Vimeo/MP4/archivo propio) + "marcar visto al terminar".
+- [x] Soporte de video más allá de YouTube (Vimeo/MP4/archivo propio) + "marcar visto al terminar". **(Ola 1/2)**: reproductor multi-proveedor (YouTube/Vimeo/MP4, con video firmado en la Ola 2-C); completar la lección otorga +10 XP.
 - [ ] Desglose por pregunta + explicación en el resultado (requiere que el backend devuelva correctitud por pregunta — coord. con M9).
 - [x] **Dashboard del estudiante**: banner "Continuar aprendiendo" (curso en progreso) con barra de avance y botón Continuar.
 - [x] Sanitizar `dangerouslySetInnerHTML` del cuerpo de lección (XSS) con **DOMPurify**.
-- [ ] Certificados: verificación pública por código desde la UI; placeholder de portada decente (catálogo + editor).
+- [x] Certificados: verificación pública por código desde la UI; placeholder de portada decente (catálogo + editor). **(Ola 1)**: el guardia accede al diploma emitido desde la UI (Ver diploma / Descargar PDF, sin "Reclamar" cuando ya existe). *Nota: la entrada de código de verificación pública desde la UI sigue apoyándose en el endpoint público de folio; el placeholder de portada ya existía.*
 
 ### M4 — Higiene de lenguaje (regla de memoria: nada de enums crudos)  ✅ DESPLEGADA (2026-06-10)
 - [x] Notificaciones: `eventType` (regla + log) y `status` mapeados a español (`notificationEventLabel`/`notificationStatusLabel` + `humanizeEnum` de fallback); status como pill de color.
@@ -126,7 +126,7 @@ Nextend, prerequisitos/drip/become-instructor.
 
 ### M6 — Seguridad (endurecimiento)  ✅ DESPLEGADA (2026-06-10)
 - [x] JWT con **caducidad** (`JWT_EXPIRES_IN`, default 30d) + **revalidación viva** de `User.status`/roles en cada request (`requireAuth` consulta la BD; roles ya no se "hornean" en el token → revocar rol/suspender surte efecto al instante). Verificado.
-- [x] **Rate-limit**: global 300/min + `/auth/login` 10/min (`@fastify/rate-limit`). Verificado en prod (429 tras la ráfaga).
+- [x] **Rate-limit**: global 300/min + `/auth/login` 10/min (`@fastify/rate-limit`). Verificado en prod (429 tras la ráfaga). **(Fase F)**: el tope global se hizo configurable vía `RATE_LIMIT_MAX` (**default 300 = producción intacta**) y se eleva solo en el servidor de e2e, que emite todo su tráfico desde una sola IP en ~90 s.
 - [x] Assert: en `NODE_ENV=production` el `JWT_SECRET` no puede ser el default (config.ts lanza error).
 - [x] `GET /inventory/features` detrás de auth+isAdmin (antes público). Verificado (401 sin token).
 - [x] Frontend: respuesta **401 → cierra sesión** y vuelve al login (authFetch + api()).
@@ -139,21 +139,21 @@ Nextend, prerequisitos/drip/become-instructor.
 - [x] **Reset de contraseña desde el admin** de usuarios (botón "Contraseña" por fila → `promptDialog` con input password → `POST /admin/users/:id/password`). Nuevo `promptDialog`/`PromptHost` reutilizable en `ui.tsx` (montado en layout).
 - [x] **Reporte de colaboradores**: encabezados ordenables (todas las columnas), buscador en vivo, filtro por resultado (chips desde el summary) y **paginación** (25/página). KPIs con acento de color por estado.
 - [~] (menor) paginación de la tabla de usuarios (hoy máx 200 con búsqueda/rol server-side) — diferido; charts del dashboard → diferidos (sin lib de gráficas).
-- [ ] (Opcional) Audit log de acciones admin — diferido (no era requisito).
+- [x] (Opcional) Audit log de acciones admin. **(Ola 2 + Fase F)**: `AuditEvent` + `logAdminAction` cableado en las mutaciones admin, con la Bitácora 24 h en el tablero; la Fase F sumó `ANNOUNCEMENT_PUBLISHED` (publicar anuncio de curso/global).
 
 ### M8 — Autoría (pulido de profesor)  ⏳ EN CURSO
 - [x] Password al crear estudiante/usuario como `type="password"` (antes texto visible).
 - [x] **Validación del constructor de exámenes**: no guardar opción única/múltiple sin respuesta correcta; mínimos por tipo (completar/enlazar/ordenar); enunciado obligatorio.
-- [ ] **Drag-and-drop** para reordenar módulos/clases/preguntas. (L)
+- [x] **Drag-and-drop** para reordenar módulos/clases/preguntas. (L) **(Ola 1/2)**: reorden cableado de punta a punta con **flechas** Lucide (Subir/Bajar), la UX decidida por el usuario; el drag-and-drop literal se descartó a favor de las flechas.
 - [x] Guard de cambios sin guardar a nivel **curso** (snapshot de metadatos + `beforeunload` + confirm al volver). (Autosave no necesario con el guard.)
-- [ ] Vista previa del examen como alumno.
+- [x] Vista previa del examen como alumno. **(Ola 2-D)**: tab "Vista previa" del instructor que renderiza el curso como lo ve el guardia (WYSIWYG móvil), incluida su evaluación.
 - [ ] (Opcional) Reemplazar `RichTextEditor` (execCommand) por editor moderno (Tiptap/Lexical). (L)
 
 ### M9 — Robustez de dominio  ⏳ EN CURSO
 - [x] **Completar curso exige aprobar los exámenes publicados** además de las lecciones (`updateCourseProgress`); no degrada ni borra los completados migrados (preserva `completedAt`/status). Aviso al estudiante "Aprueba el examen para obtener tu diploma". Desplegado.
 - [x] No marcar progreso en cursos `ARCHIVED` (409 en `POST /lessons/:id/complete`).
-- [ ] Flujo de calificación manual de `OPEN_ENDED`/`SHORT_TEXT` (o excluirlos del builder si no se usan en prod — solo se usaban 3 tipos).
-- [ ] Reanudar curso: exponer "última lección vista" (`lastSeenAt`).
+- [x] Flujo de calificación manual de `OPEN_ENDED`/`SHORT_TEXT` (o excluirlos del builder si no se usan en prod — solo se usaban 3 tipos). **(Ola 2)**: resuelto por **exclusión** — `OPEN_ENDED` queda fuera del builder (decisión tomada, no se usa en prod).
+- [x] Reanudar curso: exponer "última lección vista" (`lastSeenAt`). **(Ola 1)**: al volver a un curso se **conserva la lección activa** (ya no reinicia en la primera).
 
 ### M10 — Migración de contenido y cutover  ⬜
 - [ ] Migrar uploads reales del WordPress (≈669MB: imágenes/PDFs/1 MP4) a la storage nueva + reescribir URLs (hoy enlazan al WP vivo); subir `diploma-fondo-v4.jpg` real a prod.

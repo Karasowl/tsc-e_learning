@@ -241,3 +241,48 @@ BD: `bash ~/.local/share/tsc-capacita-localpg-start.sh` (Postgres :5433). App: `
 1. Revisar la rama (local, o desplegando un preview NO-prod).
 2. Deploy/cutover a producción con su visto bueno (no se tocó prod para proteger a los usuarios vivos).
 3. Play Store: desplegar el origen HTTPS, luego TWA/Bubblewrap con su keystore + Play Console (ver `docs/PLAY_STORE.md`; la máquina ya tiene Android SDK + JDK).
+
+---
+
+## 8. Estado tras Olas 1 y 2 (implementado)
+
+> Registro descriptivo del cierre real (2026-07-17). La §7 queda como historia; esta sección refleja el estado tras las dos olas. Rama `redesign/dark-first-flows`, **sin push ni deploy** (el VPS está compartido con producción). Todo verificado en local.
+
+### Ola 1 — flujos usables sin huecos (commit `bf6a271`)
+Se cerraron los huecos que dejaban a cada rol a medias, sobre el motor real:
+- **Guardia**: el resultado del examen **persiste** (ya no se pierde al recargar); se **conserva la lección activa** al volver al curso; **acceso directo al diploma** ya emitido (Ver diploma / Descargar PDF, sin "Reclamar" cuando ya existe); reseñas **null-safe** con **prefill** de la reseña propia; **reproductor de video multi-proveedor** (YouTube/Vimeo/MP4).
+- **Instructor**: **reordenar** secciones/clases cableado de punta a punta; **resultados por `courseId`**; copy **honesto** al publicar; toggle **"aleatorizar preguntas"** persiste; `OPEN_ENDED` **excluido** del builder.
+- **Admin**: topbar **EN VIVO** con polling real; sección **"Correos automáticos"** con copy honesto; **observabilidad de SMTP**.
+- **API**: correo de diploma al alumno **condicional a que tenga email**; **emisión atómica** de certificado + `unique` (sin folios duplicados en carreras); reseña `unique` + `viewerReview`; `/auth/google` responde **503** cuando no está configurado (no 500); **guarda de entorno** en el seed; enum de storage **recortado a `local`**; **FK de thumbnail** con `SetNull`.
+
+### Ola 2 — el diseño materializado (los dos shells + gobierno)
+- **A — esquema + gating** (`5b1b88f`): fundaciones de datos para prerrequisitos, versión/sello y gamificación.
+- **B — APIs de feature** (`cc00d2b`): anuncios, notificaciones in-app, video firmado, plantillas de certificado, expediente, padrón.
+- **C — guardia gated + enriquecido** (`3af129d`): temario con **candados** (prerrequisito duro), examen **stepper**, acceso a **diplomas**, **racha**, **campana in-app**, **video firmado**.
+- **D — consola del instructor completa** (`dc45d60`): primitiva **Modal/Wizard**, **compositor de anuncios**, ajustes de prerrequisito/certificado, **asistente Nuevo curso** de 3 pasos, **editor de clase** (formato/duración/MP4), **builder de 2 paneles**, **vista previa** del guardia, **diseñador de plantilla de certificado**.
+- **E — Centro de Operaciones de gobierno** (`f783b6d`): **tablero** (alerta + cumplimiento + catálogo + bitácora 24 h), **expediente 360** del colaborador, **padrón maestro** + acciones masivas + estado **"Vencido"**, **campana in-app**, **anuncio global**, **diseñador de certificado**, **directorio**. `Course.serviceLine` + `/admin/overview` extendido.
+
+### Cierre de Fase F (2026-07-17)
+- **Bitácora del anuncio**: publicar un anuncio (de curso o global) ahora deja rastro (`ANNOUNCEMENT_PUBLISHED`) en la Bitácora, igual que el resto de las mutaciones admin (`apps/api/src/routes/announcements.ts`, `lib/audit.ts`, etiqueta ES en `opsCenter.tsx`).
+- **Línea de servicio como campo propio**: el asistente Nuevo curso guarda `serviceLine` en su campo (`Course.serviceLine`), ya **no como texto embebido en la descripción** (`teacherConsole.tsx`).
+- **E2E endurecidos**: autenticación por **`storageState`** (login por API una vez por rol en el `global-setup`, sesión sembrada en `localStorage`), eliminando la mitigación por reintento + espera de 12 s contra el rate-limit de `/auth/login`. El tope global del API (300/min) se hizo configurable (`RATE_LIMIT_MAX`, default **300** = producción intacta) y se **eleva solo en el servidor de e2e**, porque la suite emite todo su tráfico desde una sola IP en ~90 s y, si no, roza ese límite y produce 429 ajenos a lo verificado.
+
+### Decisiones tomadas
+- Prerrequisitos = bloqueo **DURO** (no se puede iniciar sin cumplirlos).
+- Versionado = **sello del examen** (regla de evaluación congelada por intento) + **contador de versión**; el **temario NO se congela**.
+- **Racha (streak) construida** (server-side).
+- **Diseñador de plantilla de certificado admin-owned**.
+- `OPEN_ENDED` **excluido** (no se usa en prod).
+- Correo de diploma **condicional** a que el alumno tenga email.
+
+### Decisiones de producto pendientes (no bloquean)
+- **Correo masivo de anuncios**: hoy los anuncios solo siembran la **bandeja in-app**; el envío por correo a todos los destinatarios queda pendiente de decisión.
+- **Fondo custom de la plantilla de certificado**: hoy aplica en el **HTML**; el **PDF conserva el fondo empaquetado local**.
+- **Cumplimiento y vencimiento**: una inscripción `COMPLETED` cuyo `expiresAt` ya pasó **cuenta como cumplida** (conserva su formación aprobada), no como vencida.
+
+### Verificación (corrida completa del 2026-07-17, en local)
+- **typecheck**: 0 errores (todos los paquetes).
+- **Pruebas de API**: **139/139** verdes.
+- **build** (web + api + paquetes): verde.
+- **e2e** (Playwright): **29/29** verdes.
+- Sin push ni deploy (VPS compartido con producción).

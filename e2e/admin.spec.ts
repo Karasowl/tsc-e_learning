@@ -1,6 +1,7 @@
-import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { establishSession } from "./auth-session";
 
 /**
  * QA del CENTRO DE OPERACIONES (rol ADMIN) — desktop 1280x800.
@@ -16,9 +17,6 @@ import { join } from "node:path";
  * PUBLICADOS; el guardia Marcos Martinez con 1 curso completado + 1 diploma.
  */
 
-const API_URL = "http://localhost:4000";
-const PASSWORD = "Capacita2026!";
-const ADMIN = "admin@tsc.local";
 const QA_SHOTS =
   "/tmp/claude-1000/-home-karasowl-dev-tsc-e-learning/64f53584-2202-4228-a0bd-dd9736a5f90c/scratchpad/qa-admin";
 
@@ -28,45 +26,12 @@ function shot(name: string) {
   return join(QA_SHOTS, name);
 }
 
-async function waitForApi(request: APIRequestContext) {
-  for (let i = 0; i < 60; i++) {
-    try {
-      await request.get(`${API_URL}/`, { failOnStatusCode: false, timeout: 4000 });
-      return;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
-  throw new Error(`El API en ${API_URL} no respondió a tiempo.`);
-}
-
 async function loginAdmin(page: Page) {
-  await waitForApi(page.request);
-  // /auth/login limita a 10 logins/min por IP (rate-limit real del producto). En la
-  // corrida completa la ventana puede saturarse y un login recibir 429, que la UI
-  // deja en la pantalla de acceso. Reintentamos con espera corta hasta que se libere
-  // cupo. NO toca el rate-limit del producto; solo hace robusto el e2e en su contra.
-  const MAX_ATTEMPTS = 5;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    await page.goto("/");
-    await expect(page.getByRole("button", { name: "Ingresar" })).toBeVisible();
-    await page.getByLabel("Correo").fill(ADMIN);
-    await page.getByLabel("Contraseña").fill(PASSWORD);
-    await page.getByRole("button", { name: "Ingresar" }).click();
-    // El Centro de Operaciones reemplaza al login (NO es el app-shell viejo).
-    try {
-      await page
-        .locator("main.ops-shell")
-        .waitFor({ state: "visible", timeout: attempt === MAX_ATTEMPTS ? 30_000 : 8_000 });
-      return;
-    } catch {
-      if (attempt === MAX_ATTEMPTS) {
-        throw new Error("El Centro de Operaciones no cargó tras reintentar el login (¿rate-limit persistente?).");
-      }
-      // Login rechazado (probable 429): espera a que se libere cupo y reintenta.
-      await page.waitForTimeout(12_000);
-    }
-  }
+  // Sesión sembrada (storageState) en vez del formulario: no toca /auth/login ni su
+  // rate-limit (ver e2e/auth-session.ts). El assert de la cáscara no cambia.
+  await establishSession(page, "admin");
+  // El Centro de Operaciones reemplaza al login (NO es el app-shell viejo).
+  await expect(page.locator("main.ops-shell")).toBeVisible({ timeout: 30_000 });
 }
 
 test.describe("admin · centro de operaciones (1280x800)", () => {

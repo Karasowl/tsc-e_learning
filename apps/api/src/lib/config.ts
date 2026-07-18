@@ -24,6 +24,11 @@ const configSchema = z.object({
   NOTIFICATIONS_WORKER_ENABLED: z.string().optional(),
   NOTIFICATIONS_WORKER_INTERVAL_MS: z.coerce.number().int().min(5000).default(60000),
   NOTIFICATIONS_WORKER_BATCH: z.coerce.number().int().positive().max(200).default(25),
+  // Límite global de peticiones por IP y minuto (protección de abuso). El valor de
+  // producción es 300; se deja configurable para poder elevarlo en la suite e2e,
+  // que dispara todo el tráfico desde una sola IP en poco tiempo y, si no, roza el
+  // tope y provoca 429 intermitentes ajenos a lo que se está verificando.
+  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
   CORS_ORIGINS: z.string().optional()
 });
 
@@ -52,6 +57,7 @@ export type AppConfig = {
     intervalMs: number;
     batch: number;
   };
+  rateLimitMax: number;
   corsOrigins: string[];
 };
 
@@ -87,6 +93,7 @@ export function readConfig(env = process.env): AppConfig {
       intervalMs: parsed.NOTIFICATIONS_WORKER_INTERVAL_MS,
       batch: parsed.NOTIFICATIONS_WORKER_BATCH
     },
+    rateLimitMax: parsed.RATE_LIMIT_MAX,
     corsOrigins: parsed.CORS_ORIGINS
       ? parsed.CORS_ORIGINS.split(",").map((value) => value.trim()).filter(Boolean)
       : []

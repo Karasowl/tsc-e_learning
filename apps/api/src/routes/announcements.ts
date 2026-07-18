@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { isAdmin, isTeacherOrAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
+import { logAdminAction } from "../lib/audit.js";
 
 const courseIdSchema = z.object({
   courseId: z.string().min(1)
@@ -148,6 +149,16 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
       await getPrisma().notification.createMany({ data: notifications });
     }
 
+    await logAdminAction({
+      actorId: auth.userId,
+      action: "ANNOUNCEMENT_PUBLISHED",
+      summary: `Publicó el anuncio '${announcement.title}' en ${course.title}`,
+      targetType: "announcement",
+      targetId: announcement.id,
+      metadata: { scope: "COURSE", courseId: course.id, notified: notifications.length },
+      logger: request.log
+    });
+
     return reply.code(201).send({
       announcement: serializeAnnouncement(announcement),
       notified: notifications.length
@@ -235,6 +246,16 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
     if (notifications.length > 0) {
       await getPrisma().notification.createMany({ data: notifications });
     }
+
+    await logAdminAction({
+      actorId: auth.userId,
+      action: "ANNOUNCEMENT_PUBLISHED",
+      summary: `Publicó el anuncio '${announcement.title}' en toda la plataforma`,
+      targetType: "announcement",
+      targetId: announcement.id,
+      metadata: { scope: "GLOBAL", notified: notifications.length },
+      logger: request.log
+    });
 
     return reply.code(201).send({
       announcement: serializeAnnouncement(announcement),

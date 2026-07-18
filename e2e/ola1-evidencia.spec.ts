@@ -1,6 +1,7 @@
-import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { establishSession, ROLE_EMAIL, type Role } from "./auth-session";
 
 /**
  * Evidencia visual de la Ola 1 (para QA humano). NO es una prueba funcional
@@ -13,8 +14,6 @@ import { join } from "node:path";
  *  - admin: topbar "EN VIVO" + sección "Correos automáticos".
  */
 
-const API_URL = "http://localhost:4000";
-const PASSWORD = "Capacita2026!";
 const OLA1_SHOTS = join(__dirname, "..", "tmp-qa", "ola1");
 
 mkdirSync(OLA1_SHOTS, { recursive: true });
@@ -23,49 +22,13 @@ function ola1Shot(name: string) {
   return join(OLA1_SHOTS, name);
 }
 
-async function waitForApi(request: APIRequestContext) {
-  for (let i = 0; i < 60; i++) {
-    try {
-      await request.get(`${API_URL}/`, { failOnStatusCode: false, timeout: 4000 });
-      return;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
-  throw new Error(`El API en ${API_URL} no respondió a tiempo.`);
-}
-
 async function login(page: Page, email: string, shell: string) {
-  await waitForApi(page.request);
-  await page.goto("/");
-  const submit = page.getByRole("button", { name: "Ingresar" });
-  await expect(submit).toBeVisible();
-  const shellLoc = page.locator(shell);
-
-  // En dev, Next puede seguir hidratando cuando Playwright ya interactúa: el click
-  // puede caer antes de que React conecte el handler (no-op) y un relleno previo a
-  // la hidratación puede quedar pisado por el input controlado. Rellenamos y
-  // hacemos click reintentando hasta que aparezca la cáscara; cada iteración es
-  // idempotente (un login extra es inofensivo). Esto estabiliza el login del admin
-  // (que además hashea contraseña) bajo la carga de la corrida completa.
-  for (let attempt = 0; attempt < 8; attempt++) {
-    if (await shellLoc.isVisible().catch(() => false)) {
-      return;
-    }
-    if (!(await submit.isVisible().catch(() => false))) {
-      break; // el formulario de login ya no está: probablemente autenticó.
-    }
-    await page.getByLabel("Correo").fill(email);
-    await page.getByLabel("Contraseña").fill(PASSWORD);
-    await submit.click().catch(() => undefined);
-    try {
-      await expect(shellLoc).toBeVisible({ timeout: 3000 });
-      return;
-    } catch {
-      // Reintentar: el click no disparó el login (handler aún sin hidratar).
-    }
-  }
-  await expect(shellLoc).toBeVisible({ timeout: 20_000 });
+  // Sesión sembrada (storageState) en vez del formulario: no toca /auth/login ni su
+  // rate-limit (ver e2e/auth-session.ts). El assert de la cáscara no cambia.
+  const role: Role =
+    email === ROLE_EMAIL.admin ? "admin" : email === ROLE_EMAIL.instructor ? "instructor" : "guardia";
+  await establishSession(page, role);
+  await expect(page.locator(shell)).toBeVisible({ timeout: 30_000 });
 }
 
 test.describe("evidencia ola 1 · guardia (390x844)", () => {

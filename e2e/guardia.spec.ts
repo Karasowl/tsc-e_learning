@@ -1,7 +1,8 @@
-import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { execSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { establishSession } from "./auth-session";
 
 /**
  * QA de la cáscara móvil del GUARDIA (estudiante) — "carrera del guardia".
@@ -15,9 +16,6 @@ import { join } from "node:path";
  * que el +10 es reproducible una y otra vez.
  */
 
-const API_URL = "http://localhost:4000";
-const PASSWORD = "Capacita2026!";
-const GUARDIA = "guardia@tsc.local";
 // Capturas del QA del guardia (ruta indicada por la unidad).
 const QA_SHOTS =
   "/tmp/claude-1000/-home-karasowl-dev-tsc-e-learning/64f53584-2202-4228-a0bd-dd9736a5f90c/scratchpad/qa-guardia";
@@ -42,47 +40,12 @@ function ola2cShot(name: string) {
   return join(OLA2C_SHOTS, name);
 }
 
-async function waitForApi(request: APIRequestContext) {
-  for (let i = 0; i < 60; i++) {
-    try {
-      await request.get(`${API_URL}/`, { failOnStatusCode: false, timeout: 4000 });
-      return;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
-  throw new Error(`El API en ${API_URL} no respondió a tiempo.`);
-}
-
 async function loginGuardia(page: Page) {
-  await waitForApi(page.request);
-  // El endpoint /auth/login limita a 10 logins/min por IP (rate-limit real del
-  // producto). Al correr TODA la suite, los logins previos (admin + los propios
-  // tests del guardia) llenan esa ventana y un login del guardia puede recibir 429,
-  // que la UI deja en la pantalla de acceso. Reintentamos con una espera corta: al
-  // pasar los segundos los logins viejos salen de la ventana deslizante y se libera
-  // cupo. NO toca el rate-limit del producto; solo hace robusto el e2e en su contra.
-  const MAX_ATTEMPTS = 5;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    await page.goto("/");
-    await expect(page.getByRole("button", { name: "Ingresar" })).toBeVisible();
-    await page.getByLabel("Correo").fill(GUARDIA);
-    await page.getByLabel("Contraseña").fill(PASSWORD);
-    await page.getByRole("button", { name: "Ingresar" }).click();
-    // La cáscara móvil del guardia reemplaza al login (NO es el app-shell de escritorio).
-    try {
-      await page
-        .locator("main.guard-shell")
-        .waitFor({ state: "visible", timeout: attempt === MAX_ATTEMPTS ? 30_000 : 8_000 });
-      break;
-    } catch {
-      if (attempt === MAX_ATTEMPTS) {
-        throw new Error("La cáscara del guardia no cargó tras reintentar el login (¿rate-limit persistente?).");
-      }
-      // Login rechazado (probable 429): espera a que se libere cupo y reintenta.
-      await page.waitForTimeout(12_000);
-    }
-  }
+  // Sesión sembrada (storageState) en vez del formulario: no toca /auth/login ni su
+  // rate-limit (ver e2e/auth-session.ts). El assert de la cáscara no cambia.
+  await establishSession(page, "guardia");
+  // La cáscara móvil del guardia reemplaza al login (NO es el app-shell de escritorio).
+  await expect(page.locator("main.guard-shell")).toBeVisible({ timeout: 30_000 });
   // El badge dev de Next (portal fijo en una esquina, ausente en producción) se
   // solapa con la tabbar inferior en dev; lo ocultamos solo para capturas limpias.
   // Los clicks de tab van por dispatchEvent, así que no dependen de esto.

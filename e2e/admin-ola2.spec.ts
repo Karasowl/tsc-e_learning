@@ -1,6 +1,7 @@
-import { test, expect, type Page, type APIRequestContext, type BrowserContext } from "@playwright/test";
+import { test, expect, type Page, type BrowserContext } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { establishSession } from "./auth-session";
 
 /**
  * QA de la OLA 2 · Fase E (Centro de Operaciones admin, rol ADMIN) — desktop 1280x800.
@@ -22,9 +23,6 @@ import { join } from "node:path";
  * Mercancía; evento de bitácora demo dentro de las últimas 24 h.
  */
 
-const API_URL = "http://localhost:4000";
-const PASSWORD = "Capacita2026!";
-const ADMIN = "admin@tsc.local";
 const QA_SHOTS = join(process.cwd(), "tmp-qa", "ola2-e");
 
 mkdirSync(QA_SHOTS, { recursive: true });
@@ -33,41 +31,12 @@ function shot(name: string) {
   return join(QA_SHOTS, name);
 }
 
-async function waitForApi(request: APIRequestContext) {
-  for (let i = 0; i < 60; i++) {
-    try {
-      await request.get(`${API_URL}/`, { failOnStatusCode: false, timeout: 4000 });
-      return;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
-  throw new Error(`El API en ${API_URL} no respondió a tiempo.`);
-}
-
 async function loginAdmin(page: Page) {
-  await waitForApi(page.request);
-  const MAX_ATTEMPTS = 5;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    await page.goto("/");
-    await expect(page.getByRole("button", { name: "Ingresar" })).toBeVisible({ timeout: 30_000 });
-    await page.getByLabel("Correo").fill(ADMIN);
-    await page.getByLabel("Contraseña").fill(PASSWORD);
-    await page.getByRole("button", { name: "Ingresar" }).click();
-    try {
-      // El Centro de Operaciones reemplaza al login (NO es el app-shell viejo).
-      await page
-        .locator("main.ops-shell")
-        .waitFor({ state: "visible", timeout: attempt === MAX_ATTEMPTS ? 30_000 : 8_000 });
-      return;
-    } catch {
-      if (attempt === MAX_ATTEMPTS) {
-        throw new Error("No se pudo iniciar sesión como admin (¿rate-limit de /auth/login?).");
-      }
-      // Probable 429 por rate-limit (máx. 10/min). Espera a que la ventana se libere.
-      await page.waitForTimeout(12_000);
-    }
-  }
+  // Sesión sembrada (storageState) en vez del formulario: no toca /auth/login ni su
+  // rate-limit (ver e2e/auth-session.ts). El assert de la cáscara no cambia.
+  await establishSession(page, "admin");
+  // El Centro de Operaciones reemplaza al login (NO es el app-shell viejo).
+  await expect(page.locator("main.ops-shell")).toBeVisible({ timeout: 30_000 });
 }
 
 async function goTo(page: Page, navLabel: string) {

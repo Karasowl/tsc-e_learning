@@ -26,6 +26,7 @@ function fakeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     certificateBackgroundUrl: undefined,
     certificateBackgroundPath: undefined,
     notificationsWorker: { enabled: false, intervalMs: 60000, batch: 25 },
+    rateLimitMax: 300,
     corsOrigins: [],
     ...overrides
   };

@@ -2381,7 +2381,9 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   USER_ROLE_REVOKED: "Rol retirado",
   USER_PASSWORD_RESET: "Contraseña restablecida",
   ENROLLMENT_GRANTED: "Inscripción",
-  ENROLLMENT_REVOKED: "Acceso revocado"
+  ENROLLMENT_REVOKED: "Acceso revocado",
+  ENROLLMENT_BULK_UPDATED: "Ajuste masivo de acceso",
+  ANNOUNCEMENT_PUBLISHED: "Anuncio publicado"
 };
 
 function OpsAudit({ token }: { token: string }) {

@@ -15,7 +15,8 @@ export type AuditActionName =
   | "USER_PASSWORD_RESET"
   | "ENROLLMENT_GRANTED"
   | "ENROLLMENT_REVOKED"
-  | "ENROLLMENT_BULK_UPDATED";
+  | "ENROLLMENT_BULK_UPDATED"
+  | "ANNOUNCEMENT_PUBLISHED";
 
 type AuditLogger = { warn: (obj: unknown, msg?: string) => void };
 

@@ -1,6 +1,7 @@
-import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { establishSession } from "./auth-session";
 
 /**
  * QA de la CONSOLA DEL INSTRUCTOR (rol TEACHER puro) — desktop 1280x800.
@@ -19,9 +20,6 @@ import { join } from "node:path";
  * Ejecutiva" un intento APROBADO y SELLADO (umbral congelado 80%, rulesVersion 1).
  */
 
-const API_URL = "http://localhost:4000";
-const PASSWORD = "Capacita2026!";
-const INSTRUCTOR = "instructor@tsc.local";
 const QA_SHOTS =
   "/tmp/claude-1000/-home-karasowl-dev-tsc-e-learning/64f53584-2202-4228-a0bd-dd9736a5f90c/scratchpad/qa-instructor";
 
@@ -39,47 +37,12 @@ function dshot(name: string) {
   return join(D_SHOTS, name);
 }
 
-async function waitForApi(request: APIRequestContext) {
-  for (let i = 0; i < 60; i++) {
-    try {
-      await request.get(`${API_URL}/`, { failOnStatusCode: false, timeout: 4000 });
-      return;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
-  throw new Error(`El API en ${API_URL} no respondió a tiempo.`);
-}
-
 async function loginInstructor(page: Page) {
-  await waitForApi(page.request);
-  // El endpoint /auth/login limita a 10 logins/min por IP (rate-limit real del
-  // producto). Al correr TODA la suite, admin(2)+guardia(8) llenan esa ventana y
-  // el primer login del instructor (el #11) puede recibir 429, que la UI muestra
-  // como "Credenciales invalidas". Reintentamos con una espera corta: al pasar los
-  // segundos los logins viejos salen de la ventana deslizante y se libera cupo.
-  // Esto NO toca el rate-limit del producto; solo hace robusto el e2e en su contra.
-  const MAX_ATTEMPTS = 5;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    await page.goto("/");
-    await expect(page.getByRole("button", { name: "Ingresar" })).toBeVisible();
-    await page.getByLabel("Correo").fill(INSTRUCTOR);
-    await page.getByLabel("Contraseña").fill(PASSWORD);
-    await page.getByRole("button", { name: "Ingresar" }).click();
-    // La consola del instructor reemplaza al login (NO es el app-shell de escritorio).
-    try {
-      await page
-        .locator("main.tconsole-shell")
-        .waitFor({ state: "visible", timeout: attempt === MAX_ATTEMPTS ? 30_000 : 8_000 });
-      return;
-    } catch {
-      if (attempt === MAX_ATTEMPTS) {
-        throw new Error("La consola del instructor no cargó tras reintentar el login (¿rate-limit persistente?).");
-      }
-      // Login rechazado (probable 429): espera a que se libere cupo y reintenta.
-      await page.waitForTimeout(12_000);
-    }
-  }
+  // Sesión sembrada (storageState) en vez del formulario: no toca /auth/login ni su
+  // rate-limit (ver e2e/auth-session.ts). El assert de la cáscara no cambia.
+  await establishSession(page, "instructor");
+  // La consola del instructor reemplaza al login (NO es el app-shell de escritorio).
+  await expect(page.locator("main.tconsole-shell")).toBeVisible({ timeout: 30_000 });
 }
 
 test.describe("instructor · consola de marca (1280x800)", () => {
@@ -342,12 +305,11 @@ test.describe("instructor · Fase D Ola 2 (1280x800)", () => {
     await page.screenshot({ path: dshot("asistente-3-estructura.png") });
     await page.getByRole("button", { name: "Crear curso" }).click();
 
-    // Aterriza en la Estructura del curso nuevo (Borrador v1); la línea de servicio
-    // quedó guardada como primera línea de la descripción.
+    // Aterriza en la Estructura del curso nuevo (Borrador v1). La línea de servicio
+    // ya NO contamina la descripción: se guarda en su campo propio (Course.serviceLine),
+    // así que el editor abre con la descripción vacía.
     await expect(page.locator(".tconsole-topbar-actions")).toContainText("Borrador", { timeout: 20_000 });
-    await expect(page.locator(".editor-pane--detail").getByLabel("Descripción")).toHaveValue(
-      /Línea de servicio: Custodia de mercancía/
-    );
+    await expect(page.locator(".editor-pane--detail").getByLabel("Descripción")).toHaveValue("");
 
     // Vuelve a la lista: el curso nuevo aparece.
     await page.locator(".tconsole-crumb.is-link", { hasText: "Mis cursos" }).click();

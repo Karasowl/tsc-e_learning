@@ -78,10 +78,12 @@ export async function buildServer(config: AppConfig) {
     }
   });
 
-  // Throttle abuse globally; /auth/login overrides with a stricter limit.
+  // Throttle abuse globally; /auth/login overrides with a stricter limit. El tope
+  // (300 en producción) es configurable vía RATE_LIMIT_MAX para poder elevarlo en la
+  // suite e2e, que emite todo su tráfico desde una sola IP en poco tiempo.
   await server.register(rateLimit, {
     global: true,
-    max: 300,
+    max: config.rateLimitMax,
     timeWindow: "1 minute"
   });
 

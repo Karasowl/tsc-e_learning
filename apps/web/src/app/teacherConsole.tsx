@@ -280,24 +280,20 @@ export function TeacherConsole({
     }
     setCreating(true);
     try {
-      // No hay campo dedicado de "línea de servicio" en el curso todavía: se conserva
-      // como primera línea de la descripción para no perder la elección del asistente.
-      const descriptionParts: string[] = [];
+      // La línea de servicio es un campo propio del curso (serviceLine), no se mezcla
+      // en la descripción.
+      const body: Record<string, unknown> = { title };
       if (input.serviceLine.trim()) {
-        descriptionParts.push(`Línea de servicio: ${input.serviceLine.trim()}`);
+        body.serviceLine = input.serviceLine.trim();
       }
       if (input.description.trim()) {
-        descriptionParts.push(input.description.trim());
+        body.description = input.description.trim();
       }
-      const body: Record<string, unknown> = { title };
       if (input.excerpt.trim()) {
         body.excerpt = input.excerpt.trim();
       }
       if (input.level.trim()) {
         body.level = input.level.trim();
-      }
-      if (descriptionParts.length > 0) {
-        body.description = descriptionParts.join("\n\n");
       }
       const data = await authFetch<{ course: { id: string; title?: string; status?: string; version?: number } }>(
         token,

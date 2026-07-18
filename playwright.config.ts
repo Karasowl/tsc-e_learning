@@ -33,6 +33,10 @@ export default defineConfig({
     reuseExistingServer: true,
     timeout: 120_000,
     stdout: "pipe",
-    stderr: "pipe"
+    stderr: "pipe",
+    // La suite emite todo su tráfico desde una sola IP en ~90 s y roza el tope
+    // global de 300 req/min del API (429 intermitentes ajenos a lo verificado). Se
+    // eleva SOLO para este servidor de pruebas; producción conserva su 300 (default).
+    env: { RATE_LIMIT_MAX: "100000" }
   }
 });
