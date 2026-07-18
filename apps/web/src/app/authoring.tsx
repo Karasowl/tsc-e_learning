@@ -1,12 +1,12 @@
 "use client";
 
-import { ComponentType, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Boxes, Check, ChevronDown, ChevronUp, ClipboardList, Download, FilePlus2, FileText, FolderPlus, GraduationCap, ImagePlus, LayoutList, Paperclip, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, UploadCloud, UserPlus, Users, X } from "lucide-react";
+import { ComponentType, FormEvent, useEffect, useState } from "react";
+import { ArrowLeft, Boxes, Check, ChevronDown, ChevronUp, ClipboardList, Clock, Download, FilePlus2, FileText, FileType2, FolderPlus, GraduationCap, ImagePlus, LayoutList, Link2, Paperclip, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, UploadCloud, UserPlus, Users, Video, X } from "lucide-react";
 import { RichTextEditor } from "./RichTextEditor";
 import { QuizBuilder } from "./QuizBuilder";
 import { ReviewsModeration } from "./panels";
 import { assetFileUrl, authFetch, downloadAsset, errorText, uploadAsset } from "./apiClient";
-import { confirmDialog, toast } from "./ui";
+import { Modal, confirmDialog, toast } from "./ui";
 
 type AdminCourse = {
   id: string;
@@ -30,8 +30,26 @@ type EditorLesson = {
   position: number;
   body: string | null;
   videoUrl: string | null;
+  durationSec?: number | null;
   assets?: LessonAsset[];
 };
+
+const LESSON_KINDS: Array<{ value: string; label: string }> = [
+  { value: "TEXT", label: "Texto" },
+  { value: "VIDEO", label: "Video" },
+  { value: "RESOURCE", label: "Recurso" },
+  { value: "MIXED", label: "Mixto" }
+];
+
+// Un videoUrl que apunta a /assets/:id/(file|stream) es un MP4 subido a la
+// plataforma (no un enlace externo). El player del alumno lo reconoce por esa ruta.
+function uploadedVideoAssetId(videoUrl: string | null | undefined): string | null {
+  if (!videoUrl) {
+    return null;
+  }
+  const match = videoUrl.match(/\/assets\/([^/?#]+)\/(?:file|stream)/i);
+  return match?.[1] ?? null;
+}
 
 type EditorModule = {
   id: string;
@@ -620,49 +638,8 @@ export function CourseEditor({
       ) : activeTab === "reviews" ? (
         <ReviewsModeration token={token} courseId={course.id} />
       ) : (
-        <>
-      <div className="editor-grid">
-        <label>
-          Título
-          <input value={course.title} onChange={(e) => patchCourse({ title: e.target.value })} />
-        </label>
-        <label>
-          Nivel
-          <input value={course.level ?? ""} onChange={(e) => patchCourse({ level: e.target.value })} placeholder="básico, intermedio…" />
-        </label>
-        <label>
-          Estado
-          <select value={course.status} onChange={(e) => patchCourse({ status: e.target.value })}>
-            <option value="DRAFT">Borrador</option>
-            <option value="PUBLISHED">Publicado</option>
-            <option value="ARCHIVED">Archivado</option>
-          </select>
-        </label>
-        <label className="cover-field">
-          Portada
-          <div className="cover-row">
-            {course.thumbnail && !coverError ? (
-              <img className="cover-thumb" src={assetFileUrl(course.thumbnail.id)} alt="" onError={() => setCoverError(true)} />
-            ) : (
-              <div className="cover-thumb empty"><Boxes aria-hidden /></div>
-            )}
-            <label className="secondary-button file-button">
-              <ImagePlus aria-hidden /> Subir imagen
-              <input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void changeCover(f); }} />
-            </label>
-          </div>
-        </label>
-      </div>
-
-      <label>
-        Resumen
-        <input value={course.excerpt ?? ""} onChange={(e) => patchCourse({ excerpt: e.target.value })} placeholder="Descripción corta para el catálogo" />
-      </label>
-      <label>
-        Descripción
-        <textarea rows={3} value={course.description ?? ""} onChange={(e) => patchCourse({ description: e.target.value })} />
-      </label>
-
+        <div className="editor-2pane">
+      <div className="editor-pane editor-pane--tree">
       <div className="section-header">
         <h3>Contenido del curso</h3>
         <InlineAdd label="Sección" placeholder="Nombre de la sección" icon={FolderPlus} busy={busy} onAdd={addModule} />
@@ -736,7 +713,55 @@ export function CourseEditor({
         </div>
       ))}
       {course.modules.length === 0 ? <p className="empty-state">Agrega una sección para empezar a poner clases.</p> : null}
-        </>
+      </div>
+
+      <aside className="editor-pane editor-pane--detail">
+        <div className="section-header">
+          <h3>Detalles del curso</h3>
+        </div>
+        <div className="editor-grid">
+          <label>
+            Título
+            <input value={course.title} onChange={(e) => patchCourse({ title: e.target.value })} />
+          </label>
+          <label>
+            Nivel
+            <input value={course.level ?? ""} onChange={(e) => patchCourse({ level: e.target.value })} placeholder="básico, intermedio…" />
+          </label>
+          <label>
+            Estado
+            <select value={course.status} onChange={(e) => patchCourse({ status: e.target.value })}>
+              <option value="DRAFT">Borrador</option>
+              <option value="PUBLISHED">Publicado</option>
+              <option value="ARCHIVED">Archivado</option>
+            </select>
+          </label>
+          <label className="cover-field">
+            Portada
+            <div className="cover-row">
+              {course.thumbnail && !coverError ? (
+                <img className="cover-thumb" src={assetFileUrl(course.thumbnail.id)} alt="" onError={() => setCoverError(true)} />
+              ) : (
+                <div className="cover-thumb empty"><Boxes aria-hidden /></div>
+              )}
+              <label className="secondary-button file-button">
+                <ImagePlus aria-hidden /> Subir imagen
+                <input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void changeCover(f); }} />
+              </label>
+            </div>
+          </label>
+        </div>
+
+        <label>
+          Resumen
+          <input value={course.excerpt ?? ""} onChange={(e) => patchCourse({ excerpt: e.target.value })} placeholder="Descripción corta para el catálogo" />
+        </label>
+        <label>
+          Descripción
+          <textarea rows={3} value={course.description ?? ""} onChange={(e) => patchCourse({ description: e.target.value })} />
+        </label>
+      </aside>
+        </div>
       )}
 
       {lessonModal ? (
@@ -1048,94 +1073,6 @@ function EnrollStatusTag({ status }: { status: string }) {
   return <span className={`status-pill ${cls}`}>{label}</span>;
 }
 
-function Modal({
-  title,
-  onClose,
-  wide,
-  children,
-  footer
-}: {
-  title: string;
-  onClose: () => void;
-  wide?: boolean;
-  children: ReactNode;
-  footer?: ReactNode;
-}) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    const panel = panelRef.current;
-    const focusables = () =>
-      panel
-        ? Array.from(
-            panel.querySelectorAll<HTMLElement>(
-              'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-            )
-          ).filter((element) => element.offsetParent !== null)
-        : [];
-    (focusables()[0] ?? panel)?.focus();
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (event.key === "Tab" && panel) {
-        const items = focusables();
-        if (items.length === 0) {
-          event.preventDefault();
-          return;
-        }
-        const firstEl = items[0]!;
-        const lastEl = items[items.length - 1]!;
-        if (event.shiftKey && document.activeElement === firstEl) {
-          event.preventDefault();
-          lastEl.focus();
-        } else if (!event.shiftKey && document.activeElement === lastEl) {
-          event.preventDefault();
-          firstEl.focus();
-        }
-      }
-    }
-    document.addEventListener("keydown", onKey);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previousOverflow;
-      previouslyFocused?.focus?.();
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      className="modal-overlay"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <div
-        ref={panelRef}
-        className={`modal-panel ${wide ? "wide" : ""}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        tabIndex={-1}
-      >
-        <div className="modal-head">
-          <h3>{title}</h3>
-          <button className="icon-button" onClick={onClose} title="Cerrar" type="button">
-            <X aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">{children}</div>
-        {footer ? <div className="modal-foot">{footer}</div> : null}
-      </div>
-    </div>
-  );
-}
-
 function LessonModal({
   token,
   courseId,
@@ -1155,16 +1092,29 @@ function LessonModal({
   const [title, setTitle] = useState(lesson?.title ?? "");
   const [body, setBody] = useState(lesson?.body ?? "");
   const [videoUrl, setVideoUrl] = useState(lesson?.videoUrl ?? "");
+  const [kind, setKind] = useState(lesson?.kind ?? "TEXT");
+  const [durationMin, setDurationMin] = useState(
+    lesson?.durationSec != null ? String(Math.round(lesson.durationSec / 60)) : ""
+  );
   const [assets, setAssets] = useState<LessonAsset[]>(lesson?.assets ?? []);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
   const [saved, setSaved] = useState({
     title: lesson?.title ?? "",
     body: lesson?.body ?? "",
-    videoUrl: lesson?.videoUrl ?? ""
+    videoUrl: lesson?.videoUrl ?? "",
+    kind: lesson?.kind ?? "TEXT",
+    durationMin: lesson?.durationSec != null ? String(Math.round(lesson.durationSec / 60)) : ""
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const dirty = title !== saved.title || body !== saved.body || videoUrl !== saved.videoUrl;
+  const uploadedAssetId = uploadedVideoAssetId(videoUrl);
+  const dirty =
+    title !== saved.title ||
+    body !== saved.body ||
+    videoUrl !== saved.videoUrl ||
+    kind !== saved.kind ||
+    durationMin !== saved.durationMin;
 
   // Browser-level guard: warn before the tab is closed/reloaded with unsaved edits.
   useEffect(() => {
@@ -1201,20 +1151,21 @@ function LessonModal({
     }
     setBusy(true);
     setError(null);
+    const durationSec = durationMin.trim() ? Math.max(0, Math.round(Number(durationMin) * 60)) : null;
     try {
       if (lessonId) {
         await authFetch(token, `/admin/lessons/${lessonId}`, {
           method: "PUT",
-          body: JSON.stringify({ title: title.trim(), body, videoUrl: videoUrl || null })
+          body: JSON.stringify({ title: title.trim(), body, videoUrl: videoUrl || null, kind, durationSec })
         });
       } else {
         const created = await authFetch<{ lesson: { id: string } }>(token, `/admin/courses/${courseId}/lessons`, {
           method: "POST",
-          body: JSON.stringify({ title: title.trim(), moduleId, body, videoUrl: videoUrl || null })
+          body: JSON.stringify({ title: title.trim(), moduleId, body, videoUrl: videoUrl || null, kind, durationSec })
         });
         setLessonId(created.lesson.id);
       }
-      setSaved({ title: title.trim(), body, videoUrl });
+      setSaved({ title: title.trim(), body, videoUrl, kind, durationMin });
       await onSaved();
       toast.success("Clase guardada.");
     } catch (saveError) {
@@ -1223,6 +1174,29 @@ function LessonModal({
       toast.error(message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Sube un MP4 a la plataforma y apunta videoUrl a /assets/:id/stream, la ruta que
+  // el reproductor del alumno reconoce como video propio (token corto, no URL cruda).
+  async function uploadVideo(file: File) {
+    setUploadingVideo(true);
+    setError(null);
+    try {
+      const asset = await uploadAsset(token, file);
+      // Ruta relativa: el reproductor sólo extrae el id del asset, así el enlace no
+      // queda atado al host de un entorno concreto.
+      setVideoUrl(`/assets/${asset.id}/stream`);
+      if (kind === "TEXT") {
+        setKind("VIDEO");
+      }
+      toast.success("Video subido. Recuerda guardar la clase.");
+    } catch (uploadError) {
+      const message = errorText(uploadError);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setUploadingVideo(false);
     }
   }
 
@@ -1294,10 +1268,74 @@ function LessonModal({
         Título de la clase
         <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título de la clase" />
       </label>
-      <label>
-        Video (enlace de YouTube, opcional)
-        <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://youtu.be/…" />
-      </label>
+
+      <div className="editor-grid">
+        <label>
+          <span className="field-label-icon"><FileType2 aria-hidden /> Formato</span>
+          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+            {LESSON_KINDS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="field-label-icon"><Clock aria-hidden /> Duración (min)</span>
+          <input
+            type="number"
+            min={0}
+            value={durationMin}
+            onChange={(e) => setDurationMin(e.target.value)}
+            placeholder="p. ej. 8"
+          />
+        </label>
+      </div>
+
+      <div className="lesson-video-field">
+        <div className="lesson-video-head">
+          <strong><Video aria-hidden /> Video de la clase</strong>
+          {uploadedAssetId ? <span className="pill pill--ok">MP4 subido</span> : null}
+        </div>
+        <label className="lesson-video-drop file-button">
+          <UploadCloud aria-hidden />
+          <span>{uploadingVideo ? "Subiendo video…" : "Subir MP4 (arrastra o elige un archivo)"}</span>
+          <input
+            type="file"
+            accept="video/mp4,video/*"
+            hidden
+            disabled={uploadingVideo}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                void uploadVideo(file);
+              }
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <label className="lesson-video-url">
+          <span className="field-label-icon"><Link2 aria-hidden /> O pega un enlace de YouTube / Vimeo</span>
+          <div className="lesson-video-url-row">
+            <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://youtu.be/…" />
+            {videoUrl ? (
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setVideoUrl("")}
+                title="Quitar video"
+                aria-label="Quitar video"
+              >
+                <X aria-hidden />
+              </button>
+            ) : null}
+          </div>
+          {uploadedAssetId ? (
+            <small className="muted">Este video vive en la plataforma. Se reproduce dentro de la clase.</small>
+          ) : null}
+        </label>
+      </div>
+
       <label>
         Contenido
         <RichTextEditor

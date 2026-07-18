@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { useSyncExternalStore } from "react";
-import { X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 /* ============================================================
    Toasts — feedback ligero, sin dependencias ni context plumbing.
@@ -308,5 +308,209 @@ export function TableSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: nu
         </div>
       ))}
     </div>
+  );
+}
+
+/* ============================================================
+   Modal — primitiva de diálogo de marca (scrim con blur, fade .22s,
+   foco atrapado, cierre por X / Escape / scrim, retorno de foco).
+   Base reutilizable de asistentes y editores en overlay.
+   Uso: <Modal title="Título" onClose={close} footer={...}>…</Modal>
+   ============================================================ */
+export function Modal({
+  title,
+  onClose,
+  wide = false,
+  size,
+  children,
+  footer,
+  bodyClassName,
+  labelledBy
+}: {
+  title?: string;
+  onClose: () => void;
+  wide?: boolean;
+  size?: "md" | "lg" | "xl";
+  children: ReactNode;
+  footer?: ReactNode;
+  bodyClassName?: string;
+  labelledBy?: string;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    const focusables = () =>
+      panel
+        ? Array.from(
+            panel.querySelectorAll<HTMLElement>(
+              'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )
+          ).filter((element) => element.offsetParent !== null)
+        : [];
+    (focusables()[0] ?? panel)?.focus();
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key === "Tab" && panel) {
+        const items = focusables();
+        if (items.length === 0) {
+          event.preventDefault();
+          return;
+        }
+        const firstEl = items[0]!;
+        const lastEl = items[items.length - 1]!;
+        if (event.shiftKey && document.activeElement === firstEl) {
+          event.preventDefault();
+          lastEl.focus();
+        } else if (!event.shiftKey && document.activeElement === lastEl) {
+          event.preventDefault();
+          firstEl.focus();
+        }
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus?.();
+    };
+  }, [onClose]);
+
+  const resolved = size ?? (wide ? "lg" : "md");
+  const sizeClass = resolved === "lg" ? "wide" : resolved === "xl" ? "modal-panel--xl" : "";
+
+  return (
+    <div
+      className="modal-overlay modal-overlay--blur"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        ref={panelRef}
+        className={`modal-panel modal-panel--anim ${sizeClass}`.trim()}
+        role="dialog"
+        aria-modal="true"
+        {...(labelledBy ? { "aria-labelledby": labelledBy } : { "aria-label": title ?? "Diálogo" })}
+        tabIndex={-1}
+      >
+        {title ? (
+          <div className="modal-head">
+            <h3>{title}</h3>
+            <button className="icon-button" onClick={onClose} title="Cerrar" aria-label="Cerrar" type="button">
+              <X aria-hidden />
+            </button>
+          </div>
+        ) : null}
+        <div className={`modal-body ${bodyClassName ?? ""}`.trim()}>{children}</div>
+        {footer ? <div className="modal-foot">{footer}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Wizard — stepper multipaso sobre <Modal>. Barra de pasos, botones
+   Atrás / Siguiente / Finalizar y validación por paso (validate()
+   devuelve un mensaje de error o null). No usa spring.
+   ============================================================ */
+export type WizardStep = {
+  key: string;
+  title: string;
+  render: () => ReactNode;
+  validate?: () => string | null;
+};
+
+export function Wizard({
+  title,
+  steps,
+  onFinish,
+  onCancel,
+  finishLabel = "Finalizar",
+  busy = false
+}: {
+  title: string;
+  steps: WizardStep[];
+  onFinish: () => void | Promise<void>;
+  onCancel: () => void;
+  finishLabel?: string;
+  busy?: boolean;
+}) {
+  const [index, setIndex] = useState(0);
+  const safeIndex = Math.min(index, steps.length - 1);
+  const current = steps[safeIndex]!;
+  const isLast = safeIndex === steps.length - 1;
+
+  function goNext() {
+    const error = current.validate?.();
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    if (isLast) {
+      void onFinish();
+      return;
+    }
+    setIndex(safeIndex + 1);
+  }
+
+  function goBack() {
+    if (safeIndex > 0) {
+      setIndex(safeIndex - 1);
+    }
+  }
+
+  return (
+    <Modal
+      title={title}
+      onClose={onCancel}
+      size="lg"
+      bodyClassName="wizard-modal-body"
+      footer={
+        <>
+          <span className="wizard-progress mono-label">
+            Paso {safeIndex + 1} de {steps.length}
+          </span>
+          {safeIndex > 0 ? (
+            <button className="btn btn--ghost" onClick={goBack} disabled={busy} type="button">
+              <ChevronLeft aria-hidden /> Atrás
+            </button>
+          ) : null}
+          <button className="btn btn--brand" onClick={goNext} disabled={busy} type="button">
+            {isLast ? (
+              <>
+                <Check aria-hidden /> {finishLabel}
+              </>
+            ) : (
+              <>
+                Siguiente <ChevronRight aria-hidden />
+              </>
+            )}
+          </button>
+        </>
+      }
+    >
+      <ol className="wizard-steps" aria-label="Pasos">
+        {steps.map((step, stepIndex) => (
+          <li
+            key={step.key}
+            className={`wizard-step${stepIndex === safeIndex ? " is-active" : ""}${stepIndex < safeIndex ? " is-done" : ""}`}
+            aria-current={stepIndex === safeIndex ? "step" : undefined}
+          >
+            <span className="wizard-step-dot">{stepIndex < safeIndex ? <Check aria-hidden /> : stepIndex + 1}</span>
+            <span className="wizard-step-label">{step.title}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="wizard-panel">{current.render()}</div>
+    </Modal>
   );
 }

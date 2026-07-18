@@ -46,24 +46,40 @@ const updateModuleSchema = z.object({
   position: z.number().int().optional()
 });
 
+const lessonKindSchema = z.enum(["TEXT", "VIDEO", "RESOURCE", "MIXED"]);
+
 const createLessonSchema = z.object({
   title: z.string().min(1),
   moduleId: z.string().optional(),
-  kind: z.enum(["TEXT", "VIDEO", "RESOURCE", "MIXED"]).optional(),
+  kind: lessonKindSchema.optional(),
   body: z.string().nullable().optional(),
   videoUrl: z.string().nullable().optional(),
   videoProvider: z.string().nullable().optional(),
+  durationSec: z.number().int().nonnegative().nullable().optional(),
   position: z.number().int().optional()
 });
 
 const updateLessonSchema = z.object({
   title: z.string().min(1).optional(),
   moduleId: z.string().optional(),
-  kind: z.enum(["TEXT", "VIDEO", "RESOURCE", "MIXED"]).optional(),
+  kind: lessonKindSchema.optional(),
   body: z.string().nullable().optional(),
   videoUrl: z.string().nullable().optional(),
   videoProvider: z.string().nullable().optional(),
+  durationSec: z.number().int().nonnegative().nullable().optional(),
   position: z.number().int().optional()
+});
+
+type LessonCreateInput = z.infer<typeof createLessonSchema>;
+type LessonUpdateInput = z.infer<typeof updateLessonSchema>;
+
+const prerequisiteBodySchema = z.object({
+  requiresId: z.string().min(1)
+});
+
+const prerequisiteParamsSchema = z.object({
+  courseId: z.string().min(1),
+  requiresId: z.string().min(1)
 });
 
 export async function registerCourseAdminRoutes(server: FastifyInstance) {
@@ -384,25 +400,12 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     const position = body.data.position ?? (await nextLessonPosition(course.id));
     const videoProvider = resolveVideoProvider(body.data.videoUrl, body.data.videoProvider);
 
-    const data: Prisma.LessonUncheckedCreateInput = {
+    const data = buildLessonCreateData(body.data, {
       courseId: course.id,
-      title: body.data.title,
       slug,
-      kind: body.data.kind ?? "MIXED",
-      position
-    };
-    if (body.data.moduleId !== undefined) {
-      data.moduleId = body.data.moduleId;
-    }
-    if (body.data.body !== undefined) {
-      data.body = body.data.body;
-    }
-    if (body.data.videoUrl !== undefined) {
-      data.videoUrl = body.data.videoUrl;
-    }
-    if (videoProvider !== undefined) {
-      data.videoProvider = videoProvider;
-    }
+      position,
+      videoProvider
+    });
 
     const lesson = await getPrisma().lesson.create({ data });
 
@@ -446,25 +449,7 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
       await reorderLesson(lesson.courseId, lesson.id, body.data.position);
     }
 
-    const data: Prisma.LessonUpdateInput = {};
-    if (body.data.title !== undefined) {
-      data.title = body.data.title;
-    }
-    if (body.data.moduleId !== undefined) {
-      data.module = body.data.moduleId ? { connect: { id: body.data.moduleId } } : { disconnect: true };
-    }
-    if (body.data.kind !== undefined) {
-      data.kind = body.data.kind;
-    }
-    if (body.data.body !== undefined) {
-      data.body = body.data.body;
-    }
-    if (body.data.videoUrl !== undefined) {
-      data.videoUrl = body.data.videoUrl;
-      data.videoProvider = resolveVideoProvider(body.data.videoUrl, body.data.videoProvider) ?? null;
-    } else if (body.data.videoProvider !== undefined) {
-      data.videoProvider = body.data.videoProvider;
-    }
+    const data = buildLessonUpdateData(body.data);
 
     const updated = await getPrisma().lesson.update({
       where: { id: lesson.id },
@@ -508,10 +493,300 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
 
     return { deleted: true };
   });
+
+  // ── Prerrequisitos de curso (tab Ajustes del instructor) ──────────────────
+  server.get("/admin/courses/:courseId/prerequisites", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+
+    if (!isTeacherOrAdmin(auth)) {
+      return reply.code(403).send({ error: "Teacher or admin role required" });
+    }
+
+    const params = courseIdSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: params.error.flatten() });
+    }
+
+    const course = await getPrisma().course.findUnique({
+      where: { id: params.data.courseId }
+    });
+
+    if (!course) {
+      return reply.code(404).send({ error: "Course not found" });
+    }
+
+    if (!canEditCourse(auth, course)) {
+      return reply.code(403).send({ error: "Course access denied" });
+    }
+
+    const rows = await getPrisma().coursePrerequisite.findMany({
+      where: { courseId: course.id },
+      include: { requires: { select: { title: true } } },
+      orderBy: { createdAt: "asc" }
+    });
+
+    return {
+      prerequisites: rows.map((row) => ({
+        id: row.id,
+        requiresId: row.requiresId,
+        requiresTitle: row.requires.title
+      }))
+    };
+  });
+
+  server.post("/admin/courses/:courseId/prerequisites", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+
+    if (!isTeacherOrAdmin(auth)) {
+      return reply.code(403).send({ error: "Teacher or admin role required" });
+    }
+
+    const params = courseIdSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: params.error.flatten() });
+    }
+
+    const body = prerequisiteBodySchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: body.error.flatten() });
+    }
+
+    const course = await getPrisma().course.findUnique({
+      where: { id: params.data.courseId }
+    });
+
+    if (!course) {
+      return reply.code(404).send({ error: "Course not found" });
+    }
+
+    if (!canEditCourse(auth, course)) {
+      return reply.code(403).send({ error: "Course access denied" });
+    }
+
+    const requires = await getPrisma().course.findUnique({
+      where: { id: body.data.requiresId },
+      select: { id: true, title: true }
+    });
+
+    if (!requires) {
+      return reply.code(400).send({ error: "El curso prerrequisito no existe" });
+    }
+
+    // El grafo de prerrequisitos es pequeño; lo cargamos completo para poder
+    // rechazar ciclos transitivos (A→B→C, evitar C→A) además de los directos.
+    const edges = await getPrisma().coursePrerequisite.findMany({
+      select: { courseId: true, requiresId: true }
+    });
+
+    const check = checkPrerequisiteAddition(course.id, requires.id, edges);
+    if (!check.ok) {
+      return reply.code(400).send({
+        error:
+          check.reason === "self"
+            ? "Un curso no puede ser prerrequisito de sí mismo"
+            : "Ese prerrequisito crearía un ciclo: el curso requerido ya depende de este"
+      });
+    }
+
+    try {
+      const created = await getPrisma().coursePrerequisite.create({
+        data: { courseId: course.id, requiresId: requires.id }
+      });
+      return reply.code(201).send({
+        prerequisite: { id: created.id, requiresId: requires.id, requiresTitle: requires.title }
+      });
+    } catch (error) {
+      // El vínculo ya existía (unique courseId+requiresId): idempotente.
+      if (isUniqueConstraintError(error)) {
+        const existing = await getPrisma().coursePrerequisite.findUnique({
+          where: { courseId_requiresId: { courseId: course.id, requiresId: requires.id } }
+        });
+        return reply.code(200).send({
+          prerequisite: existing
+            ? { id: existing.id, requiresId: requires.id, requiresTitle: requires.title }
+            : null
+        });
+      }
+      throw error;
+    }
+  });
+
+  server.delete("/admin/courses/:courseId/prerequisites/:requiresId", async (request, reply) => {
+    const auth = await requireAuth(server, request, reply);
+    if (!auth) {
+      return;
+    }
+
+    if (!isTeacherOrAdmin(auth)) {
+      return reply.code(403).send({ error: "Teacher or admin role required" });
+    }
+
+    const params = prerequisiteParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: params.error.flatten() });
+    }
+
+    const course = await getPrisma().course.findUnique({
+      where: { id: params.data.courseId }
+    });
+
+    if (!course) {
+      return reply.code(404).send({ error: "Course not found" });
+    }
+
+    if (!canEditCourse(auth, course)) {
+      return reply.code(403).send({ error: "Course access denied" });
+    }
+
+    const result = await getPrisma().coursePrerequisite.deleteMany({
+      where: { courseId: course.id, requiresId: params.data.requiresId }
+    });
+
+    return { deleted: result.count > 0 };
+  });
 }
 
 function canEditCourse(auth: AuthContext, course: { teacherId: string | null }) {
   return isAdmin(auth) || (auth.roles.includes("TEACHER") && course.teacherId === auth.userId);
+}
+
+/**
+ * Mapea el cuerpo validado de creación de lección a los datos de Prisma.
+ * Pura para poder probar la persistencia de `kind`/`durationSec` sin base de datos.
+ */
+export function buildLessonCreateData(
+  input: LessonCreateInput,
+  ctx: { courseId: string; slug: string; position: number; videoProvider: string | null | undefined }
+): Prisma.LessonUncheckedCreateInput {
+  const data: Prisma.LessonUncheckedCreateInput = {
+    courseId: ctx.courseId,
+    title: input.title,
+    slug: ctx.slug,
+    kind: input.kind ?? "MIXED",
+    position: ctx.position
+  };
+  if (input.moduleId !== undefined) {
+    data.moduleId = input.moduleId;
+  }
+  if (input.body !== undefined) {
+    data.body = input.body;
+  }
+  if (input.videoUrl !== undefined) {
+    data.videoUrl = input.videoUrl;
+  }
+  if (ctx.videoProvider !== undefined) {
+    data.videoProvider = ctx.videoProvider;
+  }
+  if (input.durationSec !== undefined) {
+    data.durationSec = input.durationSec;
+  }
+  return data;
+}
+
+/**
+ * Mapea el cuerpo validado de edición de lección a los datos de Prisma.
+ * Solo incluye campos presentes (parcial). El reordenamiento por `position` es
+ * un efecto aparte y no vive aquí.
+ */
+export function buildLessonUpdateData(input: LessonUpdateInput): Prisma.LessonUpdateInput {
+  const data: Prisma.LessonUpdateInput = {};
+  if (input.title !== undefined) {
+    data.title = input.title;
+  }
+  if (input.moduleId !== undefined) {
+    data.module = input.moduleId ? { connect: { id: input.moduleId } } : { disconnect: true };
+  }
+  if (input.kind !== undefined) {
+    data.kind = input.kind;
+  }
+  if (input.body !== undefined) {
+    data.body = input.body;
+  }
+  if (input.videoUrl !== undefined) {
+    data.videoUrl = input.videoUrl;
+    data.videoProvider = resolveVideoProvider(input.videoUrl, input.videoProvider) ?? null;
+  } else if (input.videoProvider !== undefined) {
+    data.videoProvider = input.videoProvider;
+  }
+  if (input.durationSec !== undefined) {
+    data.durationSec = input.durationSec;
+  }
+  return data;
+}
+
+export type PrerequisiteEdge = { courseId: string; requiresId: string };
+
+export type PrerequisiteCheck = { ok: true } | { ok: false; reason: "self" | "cycle" };
+
+/**
+ * Decide si se puede añadir el vínculo `courseId` --requiere--> `requiresId` sin
+ * romper la integridad del grafo de prerrequisitos.
+ *
+ * - Rechaza el auto-prerrequisito (`courseId === requiresId`).
+ * - Rechaza cualquier ciclo: si `requiresId` ya depende (directa o
+ *   transitivamente) de `courseId`, añadir la arista cerraría el ciclo.
+ *
+ * `edges` son los prerrequisitos ya existentes. Pura y sin E/S para poder
+ * probarse sin base de datos.
+ */
+export function checkPrerequisiteAddition(
+  courseId: string,
+  requiresId: string,
+  edges: PrerequisiteEdge[]
+): PrerequisiteCheck {
+  if (courseId === requiresId) {
+    return { ok: false, reason: "self" };
+  }
+
+  // Aristas dirigidas curso --requiere--> requerido.
+  const adjacency = new Map<string, string[]>();
+  for (const edge of edges) {
+    const list = adjacency.get(edge.courseId);
+    if (list) {
+      list.push(edge.requiresId);
+    } else {
+      adjacency.set(edge.courseId, [edge.requiresId]);
+    }
+  }
+
+  // Desde el curso requerido, ¿se alcanza el curso que recibirá el requisito?
+  // Si sí, la nueva arista cerraría un ciclo.
+  const stack = [requiresId];
+  const visited = new Set<string>();
+  while (stack.length > 0) {
+    const current = stack.pop() as string;
+    if (current === courseId) {
+      return { ok: false, reason: "cycle" };
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    for (const next of adjacency.get(current) ?? []) {
+      stack.push(next);
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Reconoce la violación de restricción única de Prisma (P2002) por su código,
+ * sin acoplar a la clase de error concreta del cliente generado.
+ */
+export function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
 }
 
 function isTeacherOrAdmin(auth: AuthContext) {
