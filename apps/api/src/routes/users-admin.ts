@@ -434,6 +434,21 @@ export async function registerUserAdminRoutes(server: FastifyInstance, config: A
       return reply.code(400).send({ error: "No puedes desactivar tu propia cuenta" });
     }
 
+    // Una cuenta sin NINGUNA credencial utilizable (ni passwordHash ni hash
+    // legado) no puede pasarse a ACTIVE a mano: no tendría forma de iniciar
+    // sesión y activar el estado invalida el flujo de invitación (que exige
+    // status INVITED). Hoy solo los invitados sin activar carecen de ambos, y el
+    // chequeo por credenciales cierra también el rodeo INVITED→DISABLED→ACTIVE.
+    if (
+      blocksManualActivation({
+        passwordHash: user.passwordHash,
+        legacyPasswordHash: user.legacyPasswordHash,
+        nextStatus: body.data.status
+      })
+    ) {
+      return reply.code(409).send({ error: "Esta cuenta aún no ha activado su acceso. Reenvía la invitación." });
+    }
+
     const data: Prisma.UserUpdateInput = {};
     if (body.data.displayName !== undefined) {
       data.displayName = body.data.displayName;
@@ -579,6 +594,24 @@ export async function registerUserAdminRoutes(server: FastifyInstance, config: A
 
 function dedupeRoles(roles: Role[]): Role[] {
   return Array.from(new Set(roles));
+}
+
+/**
+ * Decide si el cambio manual de estado debe rechazarse: pasar a ACTIVE una
+ * cuenta sin ninguna credencial utilizable (ni passwordHash ni hash legado de
+ * WordPress) la dejaría "activa" pero sin forma de iniciar sesión, y además
+ * rompería su activación por invitación (que exige status INVITED). Se decide
+ * por credenciales y no por el estado actual para cerrar también el rodeo
+ * INVITED→DISABLED→ACTIVE. Hoy solo los invitados sin activar carecen de ambos
+ * hashes, así que no afecta cuentas migradas ni cuentas ya activas. Pura para
+ * poder probarse sin base de datos.
+ */
+export function blocksManualActivation(input: {
+  passwordHash: string | null;
+  legacyPasswordHash: string | null;
+  nextStatus: string | undefined;
+}): boolean {
+  return input.nextStatus === "ACTIVE" && input.passwordHash === null && input.legacyPasswordHash === null;
 }
 
 export type EarnedBadge = { slug: string; title: string; points: number; awardedAt: Date };

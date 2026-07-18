@@ -50,11 +50,11 @@ import {
   Users,
   X
 } from "lucide-react";
-import { API_URL, authFetch, errorText } from "./apiClient";
+import { authFetch, authFetchRaw, errorText } from "./apiClient";
 import { AuthoringView } from "./authoring";
 import { ShieldMark } from "./guardApp";
 import { TeachersDirectory } from "./panels";
-import { buildReportPrintHtml } from "./reportPrint";
+import { buildReportPrintHtml, summarizeReportStatuses } from "./reportPrint";
 import { confirmDialog, Modal, toast } from "./ui";
 import { UsersRolesAdmin } from "./usersAdmin";
 
@@ -133,7 +133,8 @@ function initials(name: string) {
 }
 
 async function downloadWithAuth(token: string, path: string, filename: string) {
-  const response = await fetch(`${API_URL}${path}`, { headers: { authorization: `Bearer ${token}` } });
+  // authFetchRaw centraliza el trato de sesión vencida (401 → salir y recargar).
+  const response = await authFetchRaw(token, path);
   if (!response.ok) {
     throw new Error("No se pudo generar el archivo");
   }
@@ -863,11 +864,23 @@ function masterStatusClass(status: string, expired: boolean): string {
 }
 
 function sourceSystemEs(source: string | null): string {
-  if (!source) return "Nativo";
+  if (!source) return "Plataforma";
   const value = source.toLowerCase();
   if (value.includes("word") || value.includes("wp") || value.includes("tutor")) return "Migración";
-  return source;
+  if (value === "seed") return "Plataforma";
+  // Origen desconocido: se muestra humanizado (sin guiones bajos ni mayúsculas de sistema).
+  return humanizeEnum(source);
 }
+
+// Conjunto estable de orígenes conocidos (no depende de la página visible):
+// "wordpress" agrupa las inscripciones migradas de la plataforma anterior y el
+// sentinela "none" agrupa las altas nativas (sin sistema de origen), que el
+// servidor entiende como filtro de sourceSystem vacío. Cualquier valor nuevo
+// observado en filas se fusiona como opción extra.
+const BASE_SOURCE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "wordpress", label: "Migración" },
+  { value: "none", label: "Plataforma" }
+];
 
 function OpsEnrollmentsMaster({ token }: { token: string }) {
   const [rows, setRows] = useState<MasterEnrollment[]>([]);
@@ -885,14 +898,20 @@ function OpsEnrollmentsMaster({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [expiryDraft, setExpiryDraft] = useState("");
 
-  const sources = useMemo(() => {
-    const set = new Set<string>();
+  // Opciones de origen: conjunto estable de valores conocidos fusionado con los
+  // que aparezcan en las filas cargadas. El filtro se aplica en el servidor
+  // ("none" es el sentinela para altas nativas sin sistema de origen). Si una
+  // etiqueta se repite, se distingue con el nombre humanizado del valor.
+  const sourceOptions = useMemo(() => {
+    const map = new Map<string, string>(BASE_SOURCE_OPTIONS.map((option) => [option.value, option.label]));
     for (const row of rows) {
-      if (row.sourceSystem) {
-        set.add(row.sourceSystem);
+      if (row.sourceSystem && !map.has(row.sourceSystem)) {
+        const base = sourceSystemEs(row.sourceSystem);
+        const taken = new Set(map.values());
+        map.set(row.sourceSystem, taken.has(base) ? `${base} · ${humanizeEnum(row.sourceSystem)}` : base);
       }
     }
-    return Array.from(set);
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
   }, [rows]);
 
   const load = useCallback(async () => {
@@ -1050,9 +1069,9 @@ function OpsEnrollmentsMaster({ token }: { token: string }) {
           </span>
           <select value={source} onChange={(event) => changeFilter(setSource, event.target.value)}>
             <option value="">Todos los orígenes</option>
-            {sources.map((value) => (
-              <option key={value} value={value}>
-                {sourceSystemEs(value)}
+            {sourceOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -1282,6 +1301,17 @@ function OpsEnrollmentsByCourse({ token }: { token: string }) {
     if (!courseId) {
       return;
     }
+    // El DELETE es definitivo y borra el progreso del colaborador: se confirma antes.
+    const confirmed = await confirmDialog({
+      title: "Revocar inscripción",
+      message:
+        "Se quitará el acceso y se perderá el avance registrado de este colaborador en el curso. Esta acción no se puede deshacer.",
+      confirmLabel: "Revocar",
+      danger: true
+    });
+    if (!confirmed) {
+      return;
+    }
     setBusy(true);
     try {
       await authFetch(token, `/admin/courses/${courseId}/enrollments/${userId}`, { method: "DELETE" });
@@ -1457,7 +1487,10 @@ function OpsReports({ token }: { token: string }) {
 
   async function exportExcel() {
     try {
-      await downloadWithAuth(token, "/reports/students/export.xlsx", `reporte-colaboradores-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      // El export respeta la búsqueda activa: el servidor filtra con `q`.
+      const q = query.trim();
+      const path = `/reports/students/export.xlsx${q ? `?q=${encodeURIComponent(q)}` : ""}`;
+      await downloadWithAuth(token, path, `reporte-colaboradores-${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch (exportError) {
       toast.error(errorText(exportError));
     }
@@ -1469,7 +1502,9 @@ function OpsReports({ token }: { token: string }) {
       toast.error("El navegador bloqueó la ventana emergente. Habilítalas para exportar el PDF.");
       return;
     }
-    printWindow.document.write(buildReportPrintHtml(rows, summary));
+    // Se imprime lo que se ve: las filas ya filtradas por la búsqueda activa,
+    // con el resumen recalculado sobre esas mismas filas (no el global).
+    printWindow.document.write(buildReportPrintHtml(filtered, summarizeReportStatuses(filtered, summary)));
     printWindow.document.close();
     printWindow.focus();
   }
@@ -1608,7 +1643,7 @@ function OpsDiplomas({ token }: { token: string }) {
 
   async function view(id: string) {
     try {
-      const response = await fetch(`${API_URL}/certificates/${id}/html`, { headers: { authorization: `Bearer ${token}` } });
+      const response = await authFetchRaw(token, `/certificates/${id}/html`);
       if (!response.ok) {
         throw new Error("No se pudo abrir el diploma");
       }
@@ -2189,11 +2224,26 @@ function humanizeEnum(value: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+// Lee un conteo numérico tolerando variantes de nombre en la respuesta del servidor.
+function readCount(payload: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
 function OpsNotifications({ token }: { token: string }) {
   const [rules, setRules] = useState<NotificationRule[]>([]);
   const [logs, setLogs] = useState<NotificationLog[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Edición inline de una regla existente (asunto + destinatarios).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editSubject, setEditSubject] = useState("");
+  const [editRecipients, setEditRecipients] = useState("");
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -2244,10 +2294,105 @@ function OpsNotifications({ token }: { token: string }) {
     }
   }
 
+  async function updateRule(
+    ruleId: string,
+    payload: { recipients?: string[]; subject?: string; enabled?: boolean },
+    successMessage: string
+  ): Promise<boolean> {
+    setBusy(true);
+    try {
+      await authFetch(token, `/notifications/rules/${ruleId}`, { method: "PUT", body: JSON.stringify(payload) });
+      toast.success(successMessage);
+      await load();
+      return true;
+    } catch (updateError) {
+      toast.error(errorText(updateError));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEdit(rule: NotificationRule) {
+    setEditingId(rule.id);
+    setEditSubject(rule.subject);
+    setEditRecipients(rule.recipients.join(", "));
+  }
+
+  async function saveEdit() {
+    if (!editingId) {
+      return;
+    }
+    const recipients = editRecipients
+      .split(",")
+      .map((recipient) => recipient.trim())
+      .filter(Boolean);
+    if (!editSubject.trim() || recipients.length === 0) {
+      toast.error("La regla necesita asunto y al menos un destinatario.");
+      return;
+    }
+    const saved = await updateRule(editingId, { subject: editSubject.trim(), recipients }, "Regla actualizada.");
+    if (saved) {
+      setEditingId(null);
+    }
+  }
+
+  async function removeRule(rule: NotificationRule) {
+    const eventLabel = NOTIFICATION_EVENT_LABELS[rule.eventType] ?? humanizeEnum(rule.eventType);
+    const confirmed = await confirmDialog({
+      title: "Eliminar regla",
+      message: `Se dejará de enviar la copia por correo del evento "${eventLabel}".`,
+      confirmLabel: "Eliminar",
+      danger: true
+    });
+    if (!confirmed) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await authFetch(token, `/notifications/rules/${rule.id}`, { method: "DELETE" });
+      toast.success("Regla eliminada.");
+      if (editingId === rule.id) {
+        setEditingId(null);
+      }
+      await load();
+    } catch (removeError) {
+      toast.error(errorText(removeError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function process() {
     setBusy(true);
     try {
-      await authFetch(token, "/notifications/process?limit=25", { method: "POST", body: "{}" });
+      const response = await authFetch<Record<string, unknown>>(token, "/notifications/process?limit=25", {
+        method: "POST",
+        body: "{}"
+      });
+      // El servidor devuelve los conteos anidados ({ result: { processed, sent,
+      // failed } }); se desanida antes de leer, tolerando también la forma plana
+      // y variantes de nombre. Con ello el toast informa el resultado real y, si
+      // algo falló, la pista de revisión.
+      const container = response && typeof response === "object" ? response : {};
+      const nested = container.result;
+      const payload = nested && typeof nested === "object" ? (nested as Record<string, unknown>) : container;
+      const sent = readCount(payload, ["sent", "sentCount", "delivered"]);
+      const failed = readCount(payload, ["failed", "failedCount", "errors"]);
+      const processed = readCount(payload, ["processed", "processedCount", "total"]);
+      if (failed != null && failed > 0) {
+        toast.error(
+          `Se enviaron ${sent ?? 0} correo${(sent ?? 0) === 1 ? "" : "s"} y fallaron ${failed}. Revisa la configuración de correo del servidor.`
+        );
+      } else if (sent != null && sent > 0) {
+        toast.success(`Se enviaron ${sent} correo${sent === 1 ? "" : "s"}.`);
+      } else if (processed != null && processed === 0) {
+        toast.info("No había correos pendientes por procesar.");
+      } else if (sent === 0) {
+        toast.info("No se envió ningún correo nuevo.");
+      } else {
+        toast.success("Procesamiento completado.");
+      }
       await load();
     } catch (processError) {
       toast.error(errorText(processError));
@@ -2317,10 +2462,73 @@ function OpsNotifications({ token }: { token: string }) {
 
         <div className="rule-list">
           {rules.map((rule) => (
-            <div className="rule-row" key={rule.id}>
+            <div className={`rule-row ops-rule-row${rule.enabled ? "" : " is-off"}`} key={rule.id}>
               <Bell aria-hidden />
-              <span>{NOTIFICATION_EVENT_LABELS[rule.eventType] ?? humanizeEnum(rule.eventType)}</span>
-              <small>{rule.recipients.join(", ")}</small>
+              <div className="ops-rule-main">
+                <div className="ops-rule-top">
+                  <span>{NOTIFICATION_EVENT_LABELS[rule.eventType] ?? humanizeEnum(rule.eventType)}</span>
+                  <span className={`status-pill ${rule.enabled ? "activo" : "disabled"}`}>
+                    {rule.enabled ? "Activa" : "Inactiva"}
+                  </span>
+                </div>
+                <small className="muted ops-rule-subject">Asunto: {rule.subject}</small>
+                <small className="muted ops-rule-recipients">{rule.recipients.join(", ")}</small>
+                {editingId === rule.id ? (
+                  <div className="ops-rule-edit">
+                    <label>
+                      Asunto
+                      <input value={editSubject} onChange={(event) => setEditSubject(event.target.value)} />
+                    </label>
+                    <label>
+                      Destinatarios (separados por coma)
+                      <input
+                        value={editRecipients}
+                        onChange={(event) => setEditRecipients(event.target.value)}
+                        placeholder="correo@tsc.com, otro@tsc.com"
+                      />
+                    </label>
+                    <div className="quiz-actions">
+                      <button className="secondary-button" disabled={busy} onClick={() => void saveEdit()} type="button">
+                        <Save aria-hidden /> Guardar
+                      </button>
+                      <button className="ghost-button" disabled={busy} onClick={() => setEditingId(null)} type="button">
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              <div className="ops-rule-actions">
+                {editingId === rule.id ? null : (
+                  <button className="ghost-button" disabled={busy} onClick={() => startEdit(rule)} type="button">
+                    Editar
+                  </button>
+                )}
+                <button
+                  className="ghost-button"
+                  disabled={busy}
+                  onClick={() =>
+                    void updateRule(
+                      rule.id,
+                      { enabled: !rule.enabled },
+                      rule.enabled ? "Regla desactivada." : "Regla activada."
+                    )
+                  }
+                  type="button"
+                >
+                  {rule.enabled ? "Desactivar" : "Activar"}
+                </button>
+                <button
+                  className="icon-button"
+                  disabled={busy}
+                  onClick={() => void removeRule(rule)}
+                  title="Eliminar regla"
+                  aria-label="Eliminar regla"
+                  type="button"
+                >
+                  <Trash2 aria-hidden />
+                </button>
+              </div>
             </div>
           ))}
           {rules.length === 0 ? <p className="empty-state">No hay reglas de copia a RH configuradas.</p> : null}

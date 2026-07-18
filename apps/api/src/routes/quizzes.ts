@@ -10,6 +10,7 @@ import {
   snapshotGradingQuestions
 } from "../lib/rules-snapshot.js";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
+import { recomputeCourseCompletion } from "../lib/course-progress.js";
 import { emitStudentNotification } from "../lib/notifications.js";
 import { awardQuizPassedBadges } from "../lib/gamification.js";
 import { computeCourseLock, computeExamLocked, type CoursePrereq } from "../lib/gating.js";
@@ -51,11 +52,23 @@ export async function registerQuizRoutes(server: FastifyInstance) {
 
     const quiz = await loadQuizForAttempt(parsed.data.quizId, auth.userId);
     if (!quiz) {
-      return reply.code(404).send({ error: "Quiz not found" });
+      return reply.code(404).send({ error: "No se encontró el examen" });
     }
 
     if (!canUseQuiz(auth, quiz.course.teacherId, quiz.course.enrollments.length > 0)) {
-      return reply.code(403).send({ error: "Quiz access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este examen" });
+    }
+
+    // Un examen no publicado (borrador o archivado) no existe para el alumno:
+    // solo el dueño del curso o un admin pueden presentarlo (preview/autoría).
+    // La completitud del curso solo cuenta exámenes PUBLISHED, así que dejar
+    // iniciar intentos de borradores producía intentos que jamás contaban.
+    if (!quizAvailableForAttempt({
+      status: quiz.status,
+      isOwnerTeacher: auth.roles.includes("TEACHER") && quiz.course.teacherId === auth.userId,
+      isAdmin: isAdmin(auth)
+    })) {
+      return reply.code(404).send({ error: "No se encontró el examen" });
     }
 
     // Bloqueo duro (Fase C): el estudiante no puede presentar el examen si el
@@ -103,7 +116,7 @@ export async function registerQuizRoutes(server: FastifyInstance) {
       });
 
       if (usedAttempts >= quiz.maxAttempts) {
-        return reply.code(409).send({ error: "Quiz attempt limit reached" });
+        return reply.code(409).send({ error: "Alcanzaste el límite de intentos de este examen" });
       }
     }
 
@@ -178,11 +191,11 @@ export async function registerQuizRoutes(server: FastifyInstance) {
     });
 
     if (!attempt) {
-      return reply.code(404).send({ error: "Attempt not found" });
+      return reply.code(404).send({ error: "No se encontró el intento" });
     }
 
     if (attempt.userId !== auth.userId && !canUseQuiz(auth, attempt.quiz.course.teacherId, attempt.quiz.course.enrollments.length > 0)) {
-      return reply.code(403).send({ error: "Attempt access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este intento" });
     }
 
     const questions = orderQuestionsForAttempt(attempt.quiz.questions, attempt.questionOrder);
@@ -232,15 +245,15 @@ export async function registerQuizRoutes(server: FastifyInstance) {
     });
 
     if (!attempt) {
-      return reply.code(404).send({ error: "Attempt not found" });
+      return reply.code(404).send({ error: "No se encontró el intento" });
     }
 
     if (attempt.userId !== auth.userId) {
-      return reply.code(403).send({ error: "Only the attempt owner can submit answers" });
+      return reply.code(403).send({ error: "Solo quien inició el intento puede enviar respuestas" });
     }
 
     if (attempt.status !== "IN_PROGRESS") {
-      return reply.code(409).send({ error: "Attempt is not in progress", attempt: serializeAttempt(attempt) });
+      return reply.code(409).send({ error: "Este intento ya no está en curso", attempt: serializeAttempt(attempt) });
     }
 
     const now = new Date();
@@ -253,7 +266,7 @@ export async function registerQuizRoutes(server: FastifyInstance) {
         }
       });
 
-      return reply.code(409).send({ error: "Attempt time limit expired", attempt: serializeAttempt(expired) });
+      return reply.code(409).send({ error: "Se agotó el tiempo del examen", attempt: serializeAttempt(expired) });
     }
 
     // Grade against the sealed rules (frozen questions + correct keys + passing
@@ -319,17 +332,32 @@ export async function registerQuizRoutes(server: FastifyInstance) {
     });
 
     // Insignias reales por aprobar examen (y por 100% de aciertos). Idempotente.
+    // Al aprobar tambien se recalcula la finalizacion del curso: el examen final
+    // se desbloquea con todas las lecciones completas, asi que este es el ultimo
+    // requisito y sin este recomputo la inscripcion quedaba ACTIVE al 100% para
+    // siempre (y el diploma, inalcanzable). Dispara exactamente los mismos
+    // efectos de finalizacion que la ruta de completar leccion.
+    let courseProgress = null;
     if (passed) {
       await awardQuizPassedBadges(getPrisma(), {
         userId: auth.userId,
         courseId: attempt.quiz.courseId,
         scorePercent: grade.scorePercent
       });
+      courseProgress = await recomputeCourseCompletion(getPrisma(), {
+        userId: auth.userId,
+        courseId: attempt.quiz.courseId,
+        courseTitle: attempt.quiz.course.title,
+        completedAt: now
+      });
     }
 
     return {
       attempt: serializeAttempt(updatedAttempt),
-      grade
+      grade,
+      // Aditivo: el frontend refresca por GET, pero aqui ya puede saber si el
+      // curso quedo completado con este envio.
+      courseProgress
     };
   });
 }
@@ -354,6 +382,19 @@ async function loadQuizForAttempt(quizId: string, userId: string) {
       }
     }
   });
+}
+
+/**
+ * Un examen solo puede presentarse cuando está PUBLISHED, salvo para el docente
+ * dueño del curso o un admin (preview/autoría de borradores y archivados).
+ * Pura y total para poder probarla sin base de datos.
+ */
+export function quizAvailableForAttempt(input: {
+  status: string;
+  isOwnerTeacher: boolean;
+  isAdmin: boolean;
+}): boolean {
+  return input.status === "PUBLISHED" || input.isOwnerTeacher || input.isAdmin;
 }
 
 /**

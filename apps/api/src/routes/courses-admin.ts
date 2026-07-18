@@ -1,8 +1,10 @@
 import { getPrisma } from "@tsc-capacita/db";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
+import type { AppConfig } from "../lib/config.js";
+import { LocalStorageProvider } from "../lib/storage.js";
 
 const courseIdSchema = z.object({
   courseId: z.string().min(1)
@@ -84,7 +86,7 @@ const prerequisiteParamsSchema = z.object({
   requiresId: z.string().min(1)
 });
 
-export async function registerCourseAdminRoutes(server: FastifyInstance) {
+export async function registerCourseAdminRoutes(server: FastifyInstance, config: AppConfig) {
   server.post("/admin/courses", async (request, reply) => {
     const auth = await requireAuth(server, request, reply);
     if (!auth) {
@@ -157,51 +159,14 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     });
 
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
 
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
-    const data: Prisma.CourseUpdateInput = {};
-    if (body.data.title !== undefined) {
-      data.title = body.data.title;
-    }
-    if (body.data.description !== undefined) {
-      data.description = body.data.description;
-    }
-    if (body.data.excerpt !== undefined) {
-      data.excerpt = body.data.excerpt;
-    }
-    if (body.data.level !== undefined) {
-      data.level = body.data.level;
-    }
-    if (body.data.serviceLine !== undefined) {
-      data.serviceLine = body.data.serviceLine;
-    }
-    if (body.data.thumbnailAssetId !== undefined) {
-      // thumbnailAssetId is now a real FK to Asset: set it through the relation
-      // (a null clears the thumbnail, a value links an existing asset).
-      data.thumbnailAsset = body.data.thumbnailAssetId
-        ? { connect: { id: body.data.thumbnailAssetId } }
-        : { disconnect: true };
-    }
-    if (body.data.teacherId !== undefined && isAdmin(auth)) {
-      data.teacher = { connect: { id: body.data.teacherId } };
-    }
-    if (body.data.status !== undefined) {
-      data.status = body.data.status;
-      if (body.data.status === "PUBLISHED" && course.publishedAt === null) {
-        data.publishedAt = new Date();
-      }
-      // Publishing (any transition from a non-published state into PUBLISHED)
-      // cuts a new immutable version: vN -> vN+1. Seed/already-published courses
-      // keep their current version because they never cross this transition.
-      if (body.data.status === "PUBLISHED" && course.status !== "PUBLISHED") {
-        data.version = { increment: 1 };
-      }
-    }
+    const data = buildCourseUpdateData(body.data, course, isAdmin(auth));
 
     const updated = await getPrisma().course.update({
       where: { id: course.id },
@@ -231,16 +196,33 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     });
 
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
 
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
+
+    // Los Asset del curso quedan con onDelete SetNull, así que sin limpieza los
+    // blobs quedarían huérfanos en el storage. Se recolectan ANTES de borrar el
+    // curso (después el vínculo ya no existe): materiales del curso, materiales
+    // de sus lecciones y su portada.
+    const assets = await getPrisma().asset.findMany({
+      where: {
+        OR: [
+          { courseId: course.id },
+          { lesson: { courseId: course.id } },
+          { thumbnailForCourses: { some: { id: course.id } } }
+        ]
+      },
+      select: { id: true, storageKey: true }
+    });
 
     await getPrisma().course.delete({
       where: { id: course.id }
     });
+
+    await cleanupAssets(assets, course.id, cleanupDeps(config, request.log));
 
     return { deleted: true };
   });
@@ -270,11 +252,11 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     });
 
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
 
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     const position = body.data.position ?? (await nextModulePosition(course.id));
@@ -316,11 +298,11 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     });
 
     if (!module) {
-      return reply.code(404).send({ error: "Module not found" });
+      return reply.code(404).send({ error: "No se encontró la sección" });
     }
 
     if (!canEditCourse(auth, module.course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     if (body.data.position !== undefined && body.data.position !== module.position) {
@@ -358,11 +340,11 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     });
 
     if (!module) {
-      return reply.code(404).send({ error: "Module not found" });
+      return reply.code(404).send({ error: "No se encontró la sección" });
     }
 
     if (!canEditCourse(auth, module.course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     await getPrisma().courseModule.delete({
@@ -397,11 +379,11 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     });
 
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
 
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     const slug = await uniqueLessonSlug(course.id, body.data.title);
@@ -450,7 +432,7 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     }
 
     if (!canEditCourse(auth, lesson.course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     if (body.data.position !== undefined && body.data.position !== lesson.position) {
@@ -488,16 +470,27 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     });
 
     if (!lesson) {
-      return reply.code(404).send({ error: "Lesson not found" });
+      return reply.code(404).send({ error: "No se encontró la clase" });
     }
 
     if (!canEditCourse(auth, lesson.course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
+
+    // Igual que al borrar el curso: los materiales de la clase se recolectan
+    // antes (onDelete SetNull) para borrar sus filas y sus blobs.
+    const assets = await getPrisma().asset.findMany({
+      where: { lessonId: lesson.id },
+      select: { id: true, storageKey: true }
+    });
 
     await getPrisma().lesson.delete({
       where: { id: lesson.id }
     });
+
+    // deletedCourseId null: el curso dueño sigue vivo y cuenta en el chequeo de
+    // portadas (una portada que además era material de la clase se conserva).
+    await cleanupAssets(assets, null, cleanupDeps(config, request.log));
 
     return { deleted: true };
   });
@@ -523,11 +516,11 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     });
 
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
 
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     const rows = await getPrisma().coursePrerequisite.findMany({
@@ -570,11 +563,11 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     });
 
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
 
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     const requires = await getPrisma().course.findUnique({
@@ -645,11 +638,11 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     });
 
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
 
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     const result = await getPrisma().coursePrerequisite.deleteMany({
@@ -662,6 +655,124 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
 
 function canEditCourse(auth: AuthContext, course: { teacherId: string | null }) {
   return isAdmin(auth) || (auth.roles.includes("TEACHER") && course.teacherId === auth.userId);
+}
+
+/** Dependencias reales de limpieza para las rutas: Prisma compartido y storage local. */
+function cleanupDeps(config: AppConfig, logger: { warn: (obj: unknown, msg?: string) => void }): CleanupAssetsDeps {
+  const provider = new LocalStorageProvider(config.localStorageRoot);
+  return {
+    prisma: getPrisma(),
+    deleteBlob: (storageKey) => provider.deleteObject(storageKey),
+    logger
+  };
+}
+
+type CleanupAssetsDeps = {
+  prisma: PrismaClient;
+  deleteBlob: (storageKey: string) => Promise<void>;
+  logger: { warn: (obj: unknown, msg?: string) => void };
+};
+
+/**
+ * Borra las filas Asset recolectadas y sus blobs del storage. Best-effort: un
+ * fallo del storage (o de la limpieza completa) nunca aborta el borrado del
+ * curso/clase que ya ocurrió; solo se registra en el log. Antes de borrar se
+ * conserva todo asset que algún curso VIVO aún referencia como portada.
+ *
+ * `deletedCourseId` solo se pasa al borrar un CURSO: ese curso ya no existe y
+ * debe excluirse del chequeo de portadas. Al borrar una CLASE va null: el curso
+ * dueño sigue vivo, así que nadie se excluye (un material de la clase que además
+ * sea portada de su propio curso se conserva). Dependencias inyectables para
+ * poder probarse sin base de datos.
+ */
+export async function cleanupAssets(
+  assets: Array<{ id: string; storageKey: string }>,
+  deletedCourseId: string | null,
+  deps: CleanupAssetsDeps
+): Promise<void> {
+  if (assets.length === 0) {
+    return;
+  }
+  try {
+    const ids = assets.map((asset) => asset.id);
+    // Una portada puede estar reutilizada por otro curso (o por el curso dueño
+    // vivo, en el borrado de clase): esos assets se conservan.
+    const stillReferenced = await deps.prisma.course.findMany({
+      where: {
+        thumbnailAssetId: { in: ids },
+        ...(deletedCourseId ? { id: { not: deletedCourseId } } : {})
+      },
+      select: { thumbnailAssetId: true }
+    });
+    const keep = new Set(stillReferenced.map((row) => row.thumbnailAssetId));
+    const removable = assets.filter((asset) => !keep.has(asset.id));
+    if (removable.length === 0) {
+      return;
+    }
+
+    await deps.prisma.asset.deleteMany({ where: { id: { in: removable.map((asset) => asset.id) } } });
+
+    for (const asset of removable) {
+      try {
+        await deps.deleteBlob(asset.storageKey);
+      } catch (storageError) {
+        deps.logger.warn({ err: storageError, storageKey: asset.storageKey }, "No se pudo borrar el blob del asset");
+      }
+    }
+  } catch (cleanupError) {
+    deps.logger.warn({ err: cleanupError }, "No se pudo limpiar los assets del contenido borrado");
+  }
+}
+
+/**
+ * Mapea el cuerpo validado de edición de curso a los datos de Prisma. Incluye
+ * serviceLine (editable también aquí, no solo al crear), la portada vía relación
+ * y el corte de versión al publicar. Pura para poder probarse sin base de datos.
+ */
+export function buildCourseUpdateData(
+  input: z.infer<typeof updateCourseSchema>,
+  course: { status: string; publishedAt: Date | null },
+  actorIsAdmin: boolean
+): Prisma.CourseUpdateInput {
+  const data: Prisma.CourseUpdateInput = {};
+  if (input.title !== undefined) {
+    data.title = input.title;
+  }
+  if (input.description !== undefined) {
+    data.description = input.description;
+  }
+  if (input.excerpt !== undefined) {
+    data.excerpt = input.excerpt;
+  }
+  if (input.level !== undefined) {
+    data.level = input.level;
+  }
+  if (input.serviceLine !== undefined) {
+    data.serviceLine = input.serviceLine;
+  }
+  if (input.thumbnailAssetId !== undefined) {
+    // thumbnailAssetId is now a real FK to Asset: set it through the relation
+    // (a null clears the thumbnail, a value links an existing asset).
+    data.thumbnailAsset = input.thumbnailAssetId
+      ? { connect: { id: input.thumbnailAssetId } }
+      : { disconnect: true };
+  }
+  if (input.teacherId !== undefined && actorIsAdmin) {
+    data.teacher = { connect: { id: input.teacherId } };
+  }
+  if (input.status !== undefined) {
+    data.status = input.status;
+    if (input.status === "PUBLISHED" && course.publishedAt === null) {
+      data.publishedAt = new Date();
+    }
+    // Publishing (any transition from a non-published state into PUBLISHED)
+    // cuts a new immutable version: vN -> vN+1. Seed/already-published courses
+    // keep their current version because they never cross this transition.
+    if (input.status === "PUBLISHED" && course.status !== "PUBLISHED") {
+      data.version = { increment: 1 };
+    }
+  }
+  return data;
 }
 
 /**

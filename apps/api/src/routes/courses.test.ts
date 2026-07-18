@@ -1,6 +1,72 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { resolveLessonCompletionGate } from "./courses.js";
+import { courseDetailAccessWhere, resolveLessonCompletionGate, serializeCourseDetailHeader } from "./courses.js";
+
+describe("serializeCourseDetailHeader (cabecera del detalle de curso)", () => {
+  it("expone serviceLine para que el editor del instructor precargue el campo", () => {
+    const header = serializeCourseDetailHeader({
+      id: "c1",
+      title: "Custodia de Mercancía",
+      slug: "custodia-de-mercancia",
+      description: null,
+      excerpt: null,
+      status: "PUBLISHED",
+      version: 2,
+      level: "Básico",
+      serviceLine: "Custodia",
+      durationSec: 3600
+    });
+
+    assert.equal(header.serviceLine, "Custodia");
+    assert.equal(header.id, "c1");
+    assert.equal(header.version, 2);
+  });
+
+  it("conserva serviceLine null cuando el curso no tiene línea de servicio", () => {
+    const header = serializeCourseDetailHeader({
+      id: "c2",
+      title: "T",
+      slug: "t",
+      description: null,
+      excerpt: null,
+      status: "DRAFT",
+      version: 1,
+      level: null,
+      serviceLine: null,
+      durationSec: null
+    });
+
+    assert.equal(header.serviceLine, null);
+  });
+});
+
+describe("courseDetailAccessWhere (detalle de curso, incluidos archivados del dueño)", () => {
+  it("no restringe al admin: puede cargar el detalle de un curso ARCHIVED", () => {
+    const where = courseDetailAccessWhere({ userId: "a1", roles: ["ADMIN"] });
+    assert.deepEqual(where, {});
+  });
+
+  it("permite al docente sus propios cursos en cualquier estado, y los ajenos solo inscrito y no archivados", () => {
+    const where = courseDetailAccessWhere({ userId: "t1", roles: ["TEACHER"] });
+    assert.deepEqual(where, {
+      OR: [
+        { teacherId: "t1" },
+        {
+          status: { not: "ARCHIVED" },
+          enrollments: { some: { userId: "t1" } }
+        }
+      ]
+    });
+  });
+
+  it("mantiene al estudiante en cursos PUBLISHED donde está inscrito (sin archivados ni borradores)", () => {
+    const where = courseDetailAccessWhere({ userId: "s1", roles: ["STUDENT"] });
+    assert.deepEqual(where, {
+      status: "PUBLISHED",
+      enrollments: { some: { userId: "s1" } }
+    });
+  });
+});
 
 describe("resolveLessonCompletionGate (bloqueo duro al completar leccion)", () => {
   it("rechaza cuando el curso esta bloqueado por un prerrequisito no completado", () => {

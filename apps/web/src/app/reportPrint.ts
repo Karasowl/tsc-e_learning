@@ -12,6 +12,23 @@ export type PrintableReportRow = {
   latestAttempt: { scorePercent: number | null } | null;
 };
 
+// Recalcula el resumen sobre las filas visibles (filtradas): conserva todas las
+// categorías del resumen global (aunque queden en cero) y cuenta por estado.
+// Así el PDF impreso nunca mezcla filas filtradas con totales globales.
+export function summarizeReportStatuses(
+  rows: Array<{ status: string }>,
+  baseSummary: Record<string, number>
+): Record<string, number> {
+  const summary: Record<string, number> = {};
+  for (const key of Object.keys(baseSummary)) {
+    summary[key] = 0;
+  }
+  for (const row of rows) {
+    summary[row.status] = (summary[row.status] ?? 0) + 1;
+  }
+  return summary;
+}
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")

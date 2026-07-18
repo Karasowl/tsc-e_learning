@@ -1,7 +1,7 @@
 "use client";
 
 import { ComponentType, FormEvent, useEffect, useState } from "react";
-import { ArrowLeft, Boxes, Check, ChevronDown, ChevronUp, ClipboardList, Clock, Download, FilePlus2, FileText, FileType2, FolderPlus, GraduationCap, ImagePlus, LayoutList, Link2, Paperclip, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, UploadCloud, UserPlus, Users, Video, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Boxes, Check, ChevronDown, ChevronUp, ClipboardList, Clock, Download, FilePlus2, FileText, FileType2, FolderPlus, GraduationCap, ImagePlus, LayoutList, Link2, Paperclip, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, UploadCloud, UserPlus, Users, Video, X } from "lucide-react";
 import { RichTextEditor } from "./RichTextEditor";
 import { QuizBuilder } from "./QuizBuilder";
 import { ReviewsModeration } from "./panels";
@@ -34,6 +34,10 @@ type EditorLesson = {
   assets?: LessonAsset[];
 };
 
+// Líneas de servicio sugeridas: las comparte el asistente "Nuevo curso" de la
+// consola del instructor y el campo editable del editor de curso.
+export const SERVICE_LINES = ["Protección ejecutiva", "Custodia de mercancía", "Seguridad intramuros"];
+
 const LESSON_KINDS: Array<{ value: string; label: string }> = [
   { value: "TEXT", label: "Texto" },
   { value: "VIDEO", label: "Video" },
@@ -56,7 +60,7 @@ type EditorModule = {
   title: string;
   position: number;
   lessons: EditorLesson[];
-  quizzes: { id: string; title: string }[];
+  quizzes: { id: string; title: string; status?: string }[];
 };
 
 type EditorCourse = {
@@ -66,6 +70,9 @@ type EditorCourse = {
   description: string | null;
   excerpt: string | null;
   level: string | null;
+  // Línea de servicio del curso. Opcional porque el detalle público puede no
+  // exponerla todavía: si no llega, el campo inicia vacío y NO se pisa al guardar.
+  serviceLine?: string | null;
   status: string;
   version: number;
   thumbnail?: { id: string } | null;
@@ -261,6 +268,7 @@ export function CourseEditor({
     excerpt: string | null;
     description: string | null;
     level: string | null;
+    serviceLine: string | null;
     status: string;
   } | null>(null);
 
@@ -274,6 +282,7 @@ export function CourseEditor({
         excerpt: data.course.excerpt ?? null,
         description: data.course.description ?? null,
         level: data.course.level ?? null,
+        serviceLine: data.course.serviceLine ?? null,
         status: data.course.status
       });
       setCoverError(false);
@@ -298,6 +307,10 @@ export function CourseEditor({
     }
     setBusy(true);
     setError(null);
+    // La línea de servicio solo viaja cuando el usuario la cambió: si el detalle
+    // aún no la expone, un guardado sin tocarla no borra el valor existente.
+    const serviceLineNormalized = (course.serviceLine ?? "").trim() || null;
+    const serviceLineChanged = Boolean(savedSnapshot && serviceLineNormalized !== savedSnapshot.serviceLine);
     try {
       const updated = await authFetch<{ course: { title: string; status: string; version: number } }>(
         token,
@@ -309,7 +322,8 @@ export function CourseEditor({
             excerpt: course.excerpt,
             description: course.description,
             level: course.level,
-            status: course.status
+            status: course.status,
+            ...(serviceLineChanged ? { serviceLine: serviceLineNormalized } : {})
           })
         }
       );
@@ -322,6 +336,7 @@ export function CourseEditor({
         excerpt: course.excerpt ?? null,
         description: course.description ?? null,
         level: course.level ?? null,
+        serviceLine: serviceLineChanged ? serviceLineNormalized : savedSnapshot?.serviceLine ?? null,
         status: course.status
       });
       onMeta?.({ title: updated.course.title, status: updated.course.status, version: updated.course.version });
@@ -532,6 +547,7 @@ export function CourseEditor({
         (course.excerpt ?? null) !== savedSnapshot.excerpt ||
         (course.description ?? null) !== savedSnapshot.description ||
         (course.level ?? null) !== savedSnapshot.level ||
+        ((course.serviceLine ?? "").trim() || null) !== savedSnapshot.serviceLine ||
         course.status !== savedSnapshot.status)
   );
 
@@ -616,6 +632,18 @@ export function CourseEditor({
       )}
 
       {error ? <p className="error-line">{error}</p> : null}
+
+      {course.status === "ARCHIVED" ? (
+        <div className="ops-alert card tone-warn" role="status">
+          <span className="ops-alert-icon" aria-hidden>
+            <AlertTriangle aria-hidden />
+          </span>
+          <div className="ops-alert-body">
+            <strong>Curso archivado</strong>
+            <span>Los colaboradores no ven este curso. Cambia el estado para reactivarlo.</span>
+          </div>
+        </div>
+      ) : null}
 
       {embedded ? null : (
         <div className="editor-tabs">
@@ -702,6 +730,11 @@ export function CourseEditor({
                 <div className="quiz-list-row" key={quiz.id}>
                   <button className="quiz-list-item" onClick={() => setEditingQuizId(quiz.id)} type="button">
                     <ClipboardList aria-hidden /> {quiz.title}
+                    {quiz.status ? (
+                      <span className={quiz.status === "PUBLISHED" ? "pill pill--ok" : "pill pill--watch"}>
+                        {quiz.status === "PUBLISHED" ? "Publicado" : "Borrador"}
+                      </span>
+                    ) : null}
                   </button>
                   <button className="icon-button" disabled={busy} onClick={() => void removeQuiz(quiz.id)} title="Eliminar examen" type="button">
                     <Trash2 aria-hidden />
@@ -713,6 +746,11 @@ export function CourseEditor({
         </div>
       ))}
       {course.modules.length === 0 ? <p className="empty-state">Agrega una sección para empezar a poner clases.</p> : null}
+      {course.modules.some((module) => module.quizzes.some((quiz) => quiz.status && quiz.status !== "PUBLISHED")) ? (
+        <p className="muted quiz-draft-note">
+          Los exámenes en borrador no cuentan para aprobar el curso ni son visibles para los colaboradores.
+        </p>
+      ) : null}
       </div>
 
       <aside className="editor-pane editor-pane--detail">
@@ -750,6 +788,29 @@ export function CourseEditor({
               </label>
             </div>
           </label>
+        </div>
+
+        <div className="service-line-field">
+          <label>
+            Línea de servicio
+            <input
+              value={course.serviceLine ?? ""}
+              onChange={(e) => patchCourse({ serviceLine: e.target.value })}
+              placeholder="p. ej. Protección ejecutiva"
+            />
+          </label>
+          <div className="wizard-chips" role="group" aria-label="Líneas de servicio sugeridas">
+            {SERVICE_LINES.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`wizard-chip${(course.serviceLine ?? "") === option ? " is-active" : ""}`}
+                onClick={() => patchCourse({ serviceLine: (course.serviceLine ?? "") === option ? "" : option })}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
         </div>
 
         <label>
@@ -853,7 +914,8 @@ function EnrollmentManager({ token, courseId }: { token: string; courseId: strin
   async function revoke(userId: string) {
     const confirmed = await confirmDialog({
       title: "Quitar acceso",
-      message: "El estudiante perderá el acceso a este curso.",
+      message:
+        "Se quitará el acceso y se perderá el avance registrado de este colaborador en el curso. Esta acción no se puede deshacer.",
       confirmLabel: "Quitar acceso",
       danger: true
     });

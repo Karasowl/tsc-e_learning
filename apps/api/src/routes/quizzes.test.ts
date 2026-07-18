@@ -1,6 +1,43 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { resolveExamStartGate } from "./quizzes.js";
+import { quizAvailableForAttempt, resolveExamStartGate } from "./quizzes.js";
+
+describe("quizAvailableForAttempt (exámenes no publicados)", () => {
+  it("rechaza a un alumno inscrito en un examen DRAFT", () => {
+    assert.equal(
+      quizAvailableForAttempt({ status: "DRAFT", isOwnerTeacher: false, isAdmin: false }),
+      false
+    );
+  });
+
+  it("rechaza a un alumno en un examen ARCHIVED", () => {
+    assert.equal(
+      quizAvailableForAttempt({ status: "ARCHIVED", isOwnerTeacher: false, isAdmin: false }),
+      false
+    );
+  });
+
+  it("permite al alumno un examen PUBLISHED", () => {
+    assert.equal(
+      quizAvailableForAttempt({ status: "PUBLISHED", isOwnerTeacher: false, isAdmin: false }),
+      true
+    );
+  });
+
+  it("permite al docente dueño presentar su propio borrador (preview)", () => {
+    assert.equal(
+      quizAvailableForAttempt({ status: "DRAFT", isOwnerTeacher: true, isAdmin: false }),
+      true
+    );
+  });
+
+  it("permite al admin presentar cualquier borrador", () => {
+    assert.equal(
+      quizAvailableForAttempt({ status: "DRAFT", isOwnerTeacher: false, isAdmin: true }),
+      true
+    );
+  });
+});
 
 describe("resolveExamStartGate (bloqueo duro al iniciar examen)", () => {
   it("rechaza cuando el curso esta bloqueado por prerrequisito", () => {

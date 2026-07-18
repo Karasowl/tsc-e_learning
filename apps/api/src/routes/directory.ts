@@ -21,6 +21,9 @@ export async function registerDirectoryRoutes(server: FastifyInstance) {
         displayName: true,
         email: true,
         authoredCourses: {
+          // El directorio es visible para cualquier autenticado: solo se listan
+          // los cursos publicados (los borradores y archivados son del autor).
+          where: { status: "PUBLISHED" },
           select: {
             id: true,
             title: true,

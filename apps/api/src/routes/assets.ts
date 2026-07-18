@@ -145,7 +145,7 @@ export async function registerAssetRoutes(server: FastifyInstance, config: AppCo
 
     const data = await request.file();
     if (!data) {
-      return reply.code(400).send({ error: "File is required" });
+      return reply.code(400).send({ error: "Adjunta un archivo" });
     }
 
     if (!isAllowedMime(data.mimetype)) {
@@ -169,10 +169,10 @@ export async function registerAssetRoutes(server: FastifyInstance, config: AppCo
         include: { course: true }
       });
       if (!lesson) {
-        return reply.code(404).send({ error: "Lesson not found" });
+        return reply.code(404).send({ error: "No se encontró la clase" });
       }
       if (!canEditCourse(auth, lesson.course)) {
-        return reply.code(403).send({ error: "Course access denied" });
+        return reply.code(403).send({ error: "No tienes acceso a este curso" });
       }
       attachLessonId = lesson.id;
       attachCourseId = lesson.courseId;
@@ -218,13 +218,13 @@ export async function registerAssetRoutes(server: FastifyInstance, config: AppCo
     });
 
     if (!asset) {
-      return reply.code(404).send({ error: "Asset not found" });
+      return reply.code(404).send({ error: "No se encontró el archivo" });
     }
 
     // Resolve the owning course (directly or via the lesson) to authorize.
     const course = asset.course ?? asset.lesson?.course ?? null;
     if (course && !canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     await getPrisma().asset.delete({ where: { id: asset.id } });
@@ -251,7 +251,7 @@ export async function registerAssetRoutes(server: FastifyInstance, config: AppCo
     });
 
     if (!asset) {
-      return reply.code(404).send({ error: "Asset not found" });
+      return reply.code(404).send({ error: "No se encontró el archivo" });
     }
 
     // Images (course covers, in-lesson illustrations) stay public so they render
@@ -294,7 +294,7 @@ export async function registerAssetRoutes(server: FastifyInstance, config: AppCo
       include: { lesson: true }
     });
     if (!asset) {
-      return reply.code(404).send({ error: "Asset not found" });
+      return reply.code(404).send({ error: "No se encontró el archivo" });
     }
 
     const courseId = asset.courseId ?? asset.lesson?.courseId ?? null;
@@ -335,7 +335,7 @@ export async function registerAssetRoutes(server: FastifyInstance, config: AppCo
 
     const asset = await getPrisma().asset.findUnique({ where: { id: params.data.assetId } });
     if (!asset) {
-      return reply.code(404).send({ error: "Asset not found" });
+      return reply.code(404).send({ error: "No se encontró el archivo" });
     }
 
     const provider = new LocalStorageProvider(config.localStorageRoot);

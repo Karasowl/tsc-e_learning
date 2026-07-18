@@ -16,6 +16,9 @@ import { PrismaClient } from "@prisma/client";
 import type { QuestionType, Role } from "@prisma/client";
 import { hashApplicationPassword } from "@tsc-capacita/wp-compat";
 import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const prisma = new PrismaClient();
 
@@ -24,6 +27,11 @@ const SEED = "seed"; // marcador sourceSystem para filas propias del seed
 // Id fijo de la notificacion demo del guardia (campana). Fijo => upsert idempotente
 // y reseteable a "sin leer" desde reset-guardia-progress.ts.
 const SEED_GUARDIA_NOTIFICATION_ID = "seed-notif-guardia-bienvenida";
+// Anuncio GLOBAL demo + su aviso in-app del guardia (seccion "Anuncios" de la
+// campana). Ids fijos => upserts idempotentes.
+const SEED_ANNOUNCEMENT_ID = "seed-announcement-lineamientos";
+const SEED_GUARDIA_ANNOUNCEMENT_NOTIFICATION_ID = "seed-notif-guardia-anuncio-global";
+const PUBLISHED_ANNOUNCEMENT = new Date("2026-06-25T15:00:00.000Z");
 // Id fijo del evento de bitacora demo de gobierno (Centro de Operaciones admin).
 // Fijo => upsert idempotente; su createdAt se refresca a "ahora" en cada corrida
 // para que la bitacora de las ultimas 24 h del tablero siempre lo muestre.
@@ -54,6 +62,76 @@ function certificateVerificationCode(userId: string, courseId: string, issuedAt:
 
 function certificateStorageKey(folio: string) {
   return `certificates/generated-on-demand/${folio}.pdf`;
+}
+
+// ---------------------------------------------------------------------------
+// Documento adjunto descargable (Asset + blob en el storage local del API)
+// ---------------------------------------------------------------------------
+// El API resuelve LOCAL_STORAGE_ROOT relativo a su propio cwd (apps/api, ver
+// LocalStorageProvider en apps/api/src/lib/storage.ts). El seed corre desde
+// packages/db, asi que replica esa base para escribir el blob EXACTAMENTE donde
+// el API lo leera al servir GET /assets/:id/file.
+function resolveLocalStorageRoot(): string {
+  const configured = process.env.LOCAL_STORAGE_ROOT ?? "./storage";
+  if (path.isAbsolute(configured)) {
+    return configured;
+  }
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+  return path.resolve(repoRoot, "apps", "api", configured);
+}
+
+// PDF minimo valido (1 pagina, una linea de texto, xref con offsets reales).
+// Suficiente para que un visor lo abra y para ejercitar la descarga autenticada.
+function buildSeedPdfBytes(text: string): Buffer {
+  const stream = `BT /F1 18 Tf 72 720 Td (${text}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+  ];
+  let body = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((object, index) => {
+    offsets.push(body.length);
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = body.length;
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) {
+    xref += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  const trailer = `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(body + xref + trailer, "latin1");
+}
+
+// Siembra un documento PDF adjunto a una leccion: escribe el blob en el storage
+// local (misma ruta que usa LocalStorageProvider) y upserta el Asset con clave
+// idempotente [sourceSystem, sourceId]. El estudiante inscrito lo descarga por
+// el flujo real autenticado (GET /assets/:id/file exige sesion + inscripcion
+// para documentos no-imagen).
+async function seedLessonDocumentAsset(opts: { sourceId: string; lessonId: string; courseId: string; title: string; fileName: string; text: string }) {
+  const bytes = buildSeedPdfBytes(opts.text);
+  const storageKey = `authored/${opts.sourceId}/${opts.fileName}`;
+  const fullPath = path.join(resolveLocalStorageRoot(), storageKey);
+  await mkdir(path.dirname(fullPath), { recursive: true });
+  await writeFile(fullPath, bytes);
+
+  const data = {
+    title: opts.title,
+    mimeType: "application/pdf",
+    storageKey,
+    checksum: createHash("sha256").update(bytes).digest("hex"),
+    sizeBytes: BigInt(bytes.byteLength),
+    lessonId: opts.lessonId,
+    courseId: opts.courseId
+  };
+  return prisma.asset.upsert({
+    where: { sourceSystem_sourceId: { sourceSystem: SEED, sourceId: opts.sourceId } },
+    update: data,
+    create: { sourceSystem: SEED, sourceId: opts.sourceId, ...data }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -920,6 +998,68 @@ async function main() {
     }
   });
 
+  // Documento adjunto descargable: un PDF real en el storage local, vinculado a
+  // la primera leccion de "Custodia de Mercancia" (curso EN PROGRESO del
+  // guardia). Aparece en la lista de descargas de la leccion y se sirve por el
+  // flujo real autenticado de GET /assets/:id/file.
+  await seedLessonDocumentAsset({
+    sourceId: "asset-custodia-guia",
+    lessonId: custodia.lessons[0]!.id,
+    courseId: custodia.course.id,
+    title: "Guia rapida de custodia de mercancia (PDF)",
+    fileName: "guia-rapida-custodia-de-mercancia.pdf",
+    text: "Guia rapida de custodia de mercancia - TSC Capacita"
+  });
+
+  // Anuncio GLOBAL demo + su aviso in-app para el guardia. Replica la
+  // composicion del POST /admin/announcements (apps/api/src/routes/
+  // announcements.ts): el anuncio queda publicado (publishedAt) y cada
+  // estudiante recibe una Notification con kind ANNOUNCEMENT, el mismo titulo y
+  // cuerpo, y linkType "announcement" apuntando al id del anuncio. Aqui se
+  // siembra el aviso del guardia (el unico estudiante demo que inicia sesion)
+  // con id fijo => idempotente. El reset del guardia lo devuelve a "sin leer".
+  const announcement = await prisma.announcement.upsert({
+    where: { id: SEED_ANNOUNCEMENT_ID },
+    update: {
+      scope: "GLOBAL",
+      courseId: null,
+      authorId: admin.id,
+      title: "Lineamientos de uso de la plataforma",
+      body: "Recuerda completar tus cursos asignados y presentar los examenes dentro de tu periodo de vigencia. Ante cualquier duda contacta a tu supervisor.",
+      publishedAt: PUBLISHED_ANNOUNCEMENT
+    },
+    create: {
+      id: SEED_ANNOUNCEMENT_ID,
+      scope: "GLOBAL",
+      courseId: null,
+      authorId: admin.id,
+      title: "Lineamientos de uso de la plataforma",
+      body: "Recuerda completar tus cursos asignados y presentar los examenes dentro de tu periodo de vigencia. Ante cualquier duda contacta a tu supervisor.",
+      publishedAt: PUBLISHED_ANNOUNCEMENT
+    }
+  });
+  await prisma.notification.upsert({
+    where: { id: SEED_GUARDIA_ANNOUNCEMENT_NOTIFICATION_ID },
+    update: {
+      userId: guardia.id,
+      kind: "ANNOUNCEMENT",
+      title: announcement.title,
+      body: announcement.body,
+      linkType: "announcement",
+      linkId: announcement.id,
+      readAt: null
+    },
+    create: {
+      id: SEED_GUARDIA_ANNOUNCEMENT_NOTIFICATION_ID,
+      userId: guardia.id,
+      kind: "ANNOUNCEMENT",
+      title: announcement.title,
+      body: announcement.body,
+      linkType: "announcement",
+      linkId: announcement.id
+    }
+  });
+
   // --- Demo de gobierno del Centro de Operaciones (admin) ---
   // Un colaborador DISTINTO de Marcos con una inscripcion VENCIDA (status ACTIVE
   // pero expiresAt ya pasado) para que el padron maestro muestre "Vencido", el
@@ -1099,7 +1239,7 @@ async function main() {
   });
 
   // --- Resumen ---
-  const [users, roles, courses, modules, lessons, quizzes, questions, options, enrollments, progress, attempts, answers, certs, achievements, steps, awards, achEvents, reviews, prerequisites] =
+  const [users, roles, courses, modules, lessons, quizzes, questions, options, enrollments, progress, attempts, answers, certs, achievements, steps, awards, achEvents, reviews, prerequisites, assets, announcements, notifications] =
     await Promise.all([
       prisma.user.count(),
       prisma.userRole.count(),
@@ -1119,7 +1259,10 @@ async function main() {
       prisma.achievementAward.count(),
       prisma.achievementEvent.count(),
       prisma.courseReview.count(),
-      prisma.coursePrerequisite.count()
+      prisma.coursePrerequisite.count(),
+      prisma.asset.count(),
+      prisma.announcement.count(),
+      prisma.notification.count()
     ]);
 
   const xpTotal = await prisma.achievementEvent.aggregate({ where: { userId: guardia.id }, _sum: { points: true } });
@@ -1144,7 +1287,10 @@ async function main() {
     achievementAwards: awards,
     achievementEvents: achEvents,
     courseReviews: reviews,
-    coursePrerequisites: prerequisites
+    coursePrerequisites: prerequisites,
+    assets,
+    announcements,
+    notifications
   });
   console.log(`XP total del guardia (AchievementEvent.points): ${xpTotal._sum.points ?? 0}`);
   console.log(`Certificado folio: ${folio}`);

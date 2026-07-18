@@ -14,16 +14,25 @@ The goal is to replace the current WordPress/plugin LMS with owned code while pr
 
 ## Local Start
 
-```powershell
+```bash
 pnpm install
-Copy-Item .env.example .env
+cp .env.example .env          # PowerShell: Copy-Item .env.example .env
 docker compose up -d db
 pnpm prisma:generate
 pnpm prisma:push
+pnpm db:seed
 pnpm dev
 ```
 
-The Docker Postgres service is exposed on host port `5433` to avoid collisions with local Postgres installs that commonly own `5432`.
+`pnpm db:seed` is required on a fresh database: it creates the demo users, the published courses and the guard's progress. Without it there are no accounts to log in with. It is idempotent, so re-running it converges to the same state.
+
+Demo credentials (local only, password `Capacita2026!` for all three):
+
+- `admin@tsc.local` (admin, Centro de Operaciones)
+- `instructor@tsc.local` (teacher, consola del instructor)
+- `guardia@tsc.local` (student, cáscara móvil del guardia)
+
+The web app runs on `http://localhost:3000` and the API on `http://localhost:4000`. The Docker Postgres service is exposed on host port `5433` to avoid collisions with local Postgres installs that commonly own `5432` (any Postgres 16 on `localhost:5433` with the credentials from `.env.example` works the same, Docker is not mandatory).
 
 ## WordPress Audit
 

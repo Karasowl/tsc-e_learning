@@ -15,6 +15,16 @@ const reportQuerySchema = z.object({
   courseId: z.string().optional()
 });
 
+const exportQuerySchema = z.object({
+  courseId: z.string().optional(),
+  q: z.string().trim().optional(),
+  // Mismos valores que produce el veredicto (y que usa el filtro de estado de la
+  // pantalla del instructor): el Excel debe poder acotarse igual que la tabla.
+  status: z
+    .enum(["En Progreso", "No hay examen", "Pendiente", "Examen sin realizar", "Aprobado", "Reprobado"])
+    .optional()
+});
+
 type StudentReportStatus =
   | "En Progreso"
   | "No hay examen"
@@ -55,12 +65,18 @@ export async function registerReportRoutes(server: FastifyInstance) {
       return reply.code(403).send({ error: "Teacher or admin role required" });
     }
 
-    const parsed = reportQuerySchema.safeParse(request.query);
+    const parsed = exportQuerySchema.safeParse(request.query);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
 
-    const report = await buildStudentReport(auth, parsed.data.courseId);
+    // El Excel respeta la misma búsqueda y filtro de estado que la pantalla,
+    // para que lo exportado coincida con lo que el admin está viendo.
+    const report = filterStudentReport(
+      await buildStudentReport(auth, parsed.data.courseId),
+      parsed.data.q,
+      parsed.data.status
+    );
     const workbook = buildReportWorkbook(report);
     const buffer = await workbook.xlsx.writeBuffer();
 
@@ -83,6 +99,9 @@ async function buildStudentReport(auth: AuthContext, courseId: string | undefine
     where: courseWhere,
     include: {
       quizzes: {
+        // El veredicto se emite contra el examen final PUBLICADO: un borrador o
+        // un examen archivado no puede decidir Aprobado/Reprobado.
+        where: { status: "PUBLISHED" },
         orderBy: [{ position: "desc" }, { title: "desc" }],
         take: 1
       },
@@ -164,6 +183,42 @@ async function buildStudentReport(auth: AuthContext, courseId: string | undefine
     });
   });
 
+  return {
+    summary: summarize(rows.map((row) => row.status)),
+    rows
+  };
+}
+
+/**
+ * Filtra las filas del reporte con la MISMA semántica que el filtro en pantalla
+ * del instructor: estado del veredicto por igualdad exacta y búsqueda por
+ * nombre, correo, servicio o curso (contiene el término, sin distinguir
+ * mayúsculas). El resumen se recalcula sobre las filas filtradas. Pura para
+ * poder probarse sin base de datos.
+ */
+export function filterStudentReport(
+  report: StudentReport,
+  q: string | undefined,
+  status?: string | undefined
+): StudentReport {
+  const term = q?.trim().toLowerCase();
+  if (!term && !status) {
+    return report;
+  }
+  const rows = report.rows.filter((row) => {
+    if (status && row.status !== status) {
+      return false;
+    }
+    if (!term) {
+      return true;
+    }
+    return (
+      row.studentName.toLowerCase().includes(term) ||
+      row.email.toLowerCase().includes(term) ||
+      (row.serviceLabel ?? "").toLowerCase().includes(term) ||
+      row.courseTitle.toLowerCase().includes(term)
+    );
+  });
   return {
     summary: summarize(rows.map((row) => row.status)),
     rows

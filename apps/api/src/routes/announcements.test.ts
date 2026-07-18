@@ -1,6 +1,32 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildAnnouncementNotifications, serializeAnnouncement } from "./announcements.js";
+import {
+  announcementNotificationCleanupWhere,
+  buildAnnouncementNotifications,
+  serializeAnnouncement
+} from "./announcements.js";
+
+describe("announcementNotificationCleanupWhere (borrado de anuncio limpia su bandeja)", () => {
+  it("apunta exactamente a las notificaciones sembradas por ese anuncio", () => {
+    assert.deepEqual(announcementNotificationCleanupWhere("a1"), {
+      linkType: "announcement",
+      linkId: "a1"
+    });
+  });
+
+  it("coincide con el linkType/linkId que siembra el anuncio global", () => {
+    const rows = buildAnnouncementNotifications({
+      userIds: ["u1"],
+      title: "t",
+      body: "b",
+      linkType: "announcement",
+      linkId: "a9"
+    });
+    const where = announcementNotificationCleanupWhere("a9");
+    assert.equal(rows[0]!.linkType, where.linkType);
+    assert.equal(rows[0]!.linkId, where.linkId);
+  });
+});
 
 describe("buildAnnouncementNotifications", () => {
   it("crea una fila de bandeja ANNOUNCEMENT por destinatario con el enlace del anuncio", () => {

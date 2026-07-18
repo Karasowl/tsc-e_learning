@@ -84,9 +84,11 @@ test.describe("admin · centro de operaciones (1280x800)", () => {
     await page.locator(".ops-nav-item", { hasText: "Colaboradores" }).click();
     await expect(page.getByRole("heading", { name: "Colaboradores y roles" })).toBeVisible({ timeout: 20_000 });
 
-    const stamp = Date.now();
-    const email = `qa.invite+${stamp}@tsc.local`;
-    const name = `QA Invitado ${stamp}`;
+    // Email FIJO: el roster no crece corrida tras corrida. El global-setup borra
+    // la cuenta QA de la corrida anterior (que quedó ACTIVE al activarse), así
+    // esta invitación siempre parte de cero y el flujo es repetible.
+    const email = "qa.invite@tsc.local";
+    const name = "QA Invitado";
 
     await page.getByRole("button", { name: "Invitar" }).click();
     const inviteForm = page.locator("form.invite-form");

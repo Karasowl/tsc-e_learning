@@ -3,6 +3,7 @@ import type { Prisma, QuestionType, QuizStatus } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { isAdmin, isTeacherOrAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
+import { recomputeCourseCompletionForCourse } from "../lib/course-progress.js";
 
 const courseIdParamSchema = z.object({
   courseId: z.string().min(1)
@@ -116,17 +117,17 @@ export async function registerQuizAdminRoutes(server: FastifyInstance) {
     });
 
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
 
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     if (body.data.moduleId) {
       const moduleOk = await moduleBelongsToCourse(body.data.moduleId, course.id);
       if (!moduleOk) {
-        return reply.code(400).send({ error: "Module does not belong to this course" });
+        return reply.code(400).send({ error: "La sección no pertenece a este curso" });
       }
     }
 
@@ -181,11 +182,11 @@ export async function registerQuizAdminRoutes(server: FastifyInstance) {
     });
 
     if (!quiz) {
-      return reply.code(404).send({ error: "Quiz not found" });
+      return reply.code(404).send({ error: "No se encontró el examen" });
     }
 
     if (!canEditCourse(auth, quiz.course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     return {
@@ -248,17 +249,17 @@ export async function registerQuizAdminRoutes(server: FastifyInstance) {
     });
 
     if (!quiz) {
-      return reply.code(404).send({ error: "Quiz not found" });
+      return reply.code(404).send({ error: "No se encontró el examen" });
     }
 
     if (!canEditCourse(auth, quiz.course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     if (body.data.moduleId) {
       const moduleOk = await moduleBelongsToCourse(body.data.moduleId, quiz.courseId);
       if (!moduleOk) {
-        return reply.code(400).send({ error: "Module does not belong to this course" });
+        return reply.code(400).send({ error: "La sección no pertenece a este curso" });
       }
     }
 
@@ -301,6 +302,13 @@ export async function registerQuizAdminRoutes(server: FastifyInstance) {
       data
     });
 
+    // Despublicar un examen puede dejar el curso sin requisito de examen: los
+    // alumnos con lecciones al 100% deben poder completar sin acción posible de
+    // su lado, así que se recomputa aquí (best-effort, tras la mutación).
+    if (body.data.status !== undefined && quiz.status === "PUBLISHED" && body.data.status !== "PUBLISHED") {
+      await recomputeCompletionsBestEffort(quiz.courseId, quiz.course.title, request.log);
+    }
+
     return { quiz: serializeQuiz(updated) };
   });
 
@@ -325,14 +333,20 @@ export async function registerQuizAdminRoutes(server: FastifyInstance) {
     });
 
     if (!quiz) {
-      return reply.code(404).send({ error: "Quiz not found" });
+      return reply.code(404).send({ error: "No se encontró el examen" });
     }
 
     if (!canEditCourse(auth, quiz.course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     await getPrisma().quiz.delete({ where: { id: quiz.id } });
+
+    // Borrar un examen publicado puede eliminar el último requisito de examen
+    // del curso: recomputa la finalización de los alumnos con lecciones al 100%.
+    if (quiz.status === "PUBLISHED") {
+      await recomputeCompletionsBestEffort(quiz.courseId, quiz.course.title, request.log);
+    }
 
     return { deleted: true };
   });
@@ -363,11 +377,11 @@ export async function registerQuizAdminRoutes(server: FastifyInstance) {
     });
 
     if (!quiz) {
-      return reply.code(404).send({ error: "Quiz not found" });
+      return reply.code(404).send({ error: "No se encontró el examen" });
     }
 
     if (!canEditCourse(auth, quiz.course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     const options = buildOptionsForType(body.data.type, body.data.options, body.data.correctValue);
@@ -434,11 +448,11 @@ export async function registerQuizAdminRoutes(server: FastifyInstance) {
     });
 
     if (!question) {
-      return reply.code(404).send({ error: "Question not found" });
+      return reply.code(404).send({ error: "No se encontró la pregunta" });
     }
 
     if (!canEditCourse(auth, question.quiz.course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     // The effective type drives how new options are interpreted, even when only
@@ -520,11 +534,11 @@ export async function registerQuizAdminRoutes(server: FastifyInstance) {
     });
 
     if (!question) {
-      return reply.code(404).send({ error: "Question not found" });
+      return reply.code(404).send({ error: "No se encontró la pregunta" });
     }
 
     if (!canEditCourse(auth, question.quiz.course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     await getPrisma().question.delete({ where: { id: question.id } });
@@ -535,6 +549,23 @@ export async function registerQuizAdminRoutes(server: FastifyInstance) {
 
 function canEditCourse(auth: AuthContext, course: { teacherId: string | null }) {
   return isAdmin(auth) || (auth.roles.includes("TEACHER") && course.teacherId === auth.userId);
+}
+
+/**
+ * Barrido de finalización tras quitar un examen publicado (borrado o
+ * despublicación). Best-effort: la mutación principal ya ocurrió y un fallo
+ * aquí no debe convertirla en error; solo se registra en el log.
+ */
+async function recomputeCompletionsBestEffort(
+  courseId: string,
+  courseTitle: string,
+  logger: { warn: (obj: unknown, msg?: string) => void }
+) {
+  try {
+    await recomputeCourseCompletionForCourse(getPrisma(), { courseId, courseTitle });
+  } catch (error) {
+    logger.warn({ err: error, courseId }, "No se pudo recomputar la finalización del curso tras quitar el examen");
+  }
 }
 
 type NormalizedOption = {

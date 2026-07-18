@@ -23,6 +23,41 @@ const prisma = new PrismaClient();
 
 const RESET_AT = new Date("2026-06-08T16:00:00.000Z");
 
+// ---------------------------------------------------------------------------
+// Guarda de entorno (misma que el seed): este script BORRA y reescribe datos y
+// SOLO debe correr contra la base local de desarrollo. Aborta (sin escribir
+// nada) si NODE_ENV es production o si DATABASE_URL apunta a un host que no sea
+// local. ALLOW_SEED=1 fuerza la corrida bajo responsabilidad de quien ejecuta.
+// ---------------------------------------------------------------------------
+function assertLocalResetTarget() {
+  if (process.env.ALLOW_SEED === "1") {
+    return;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "db:reset-guardia abortado: NODE_ENV=production. El reset solo debe correr contra una base local de desarrollo. Usa ALLOW_SEED=1 para forzarlo bajo tu propia responsabilidad."
+    );
+  }
+
+  const rawUrl = process.env.DATABASE_URL ?? "";
+  let host: string;
+  try {
+    host = new URL(rawUrl).hostname;
+  } catch {
+    throw new Error(
+      "db:reset-guardia abortado: DATABASE_URL ausente o no parseable. El reset solo corre contra una base local (localhost/127.0.0.1). Usa ALLOW_SEED=1 para forzarlo."
+    );
+  }
+
+  const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+  if (!localHosts.has(host)) {
+    throw new Error(
+      `db:reset-guardia abortado: DATABASE_URL apunta a un host no local (${host}). El reset solo corre contra localhost/127.0.0.1 (base de desarrollo, típicamente :5433). Usa ALLOW_SEED=1 para forzarlo bajo tu propia responsabilidad.`
+    );
+  }
+}
+
 async function courseLessonIds(slug: string): Promise<string[]> {
   const course = await prisma.course.findUnique({
     where: { slug },
@@ -48,6 +83,8 @@ async function setEnrollment(userId: string, slug: string, progressPercent: numb
 }
 
 async function main() {
+  assertLocalResetTarget();
+
   const guardia = await prisma.user.findUnique({ where: { email: "guardia@tsc.local" } });
   if (!guardia) {
     console.log("[reset-guardia] guardia no encontrado; nada que resetear.");
@@ -88,6 +125,24 @@ async function main() {
     }
   });
 
+  // 2c) Intramuros: borrar el diploma que el e2e "aprobar → COMPLETED → reclamar
+  //     diploma" emite en cada corrida, y los NotificationLog de ese curso para
+  //     el guardia (QUIZ/COURSE_COMPLETED/CERTIFICATE_ISSUED), para que el
+  //     reclamo sea repetible y el KPI "Diplomas emitidos" vuelva a su baseline
+  //     (1, el diploma sembrado de Proteccion Ejecutiva, que queda intacto).
+  let removedCerts = 0;
+  const intramurosCourse = await prisma.course.findUnique({ where: { slug: "seguridad-intramuros" } });
+  if (intramurosCourse) {
+    removedCerts = (
+      await prisma.certificate.deleteMany({
+        where: { userId: guardia.id, courseId: intramurosCourse.id }
+      })
+    ).count;
+    await prisma.notificationLog.deleteMany({
+      where: { userId: guardia.id, courseId: intramurosCourse.id }
+    });
+  }
+
   // 3) Custodia: exactamente 2 de 3 lecciones completadas (66.67%), la última sin
   //    completar. Restaura el curso "Continuar tu misión" del hub de Rango.
   if (custodiaLessons.length > 0) {
@@ -109,7 +164,7 @@ async function main() {
   }
 
   console.log(
-    `[reset-guardia] Baseline restaurado: Intramuros 0% (${removedAttempts.count} intento(s) de examen borrados), Custodia 66.67%, ${removedXp.count} evento(s) de XP del ledger borrados (XP → 450), ${resetInbox.count} notificacion(es) marcadas como no leidas.`
+    `[reset-guardia] Baseline restaurado: Intramuros 0% (${removedAttempts.count} intento(s) de examen borrados, ${removedCerts} diploma(s) borrados), Custodia 66.67%, ${removedXp.count} evento(s) de XP del ledger borrados (XP → 450), ${resetInbox.count} notificacion(es) marcadas como no leidas.`
   );
 }
 

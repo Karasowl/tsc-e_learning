@@ -6478,3 +6478,74 @@ textarea.inp { min-height: 96px; padding: 10px 12px; line-height: var(--lh-norma
     width: 100%;
   }
 }
+
+/* ── Lección bloqueada (orden secuencial): candado + guía en el panel ───────── */
+.lesson-locked-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.lesson-locked-state svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.75;
+}
+
+/* ── Chips de estado del examen y aviso de borrador (Estructura / Reglas) ───── */
+.quiz-list-item .pill {
+  margin-left: 8px;
+}
+.quiz-draft-note,
+.tconsole-quiz-draft-note {
+  font-size: 0.85rem;
+}
+
+/* ── Línea de servicio en el editor de curso (mismo control que el asistente) ── */
+.service-line-field {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* ── Reglas de correo (Centro de Operaciones): estado, edición y acciones ────── */
+.ops-rule-row {
+  align-items: flex-start;
+}
+.ops-rule-row.is-off {
+  opacity: 0.75;
+}
+.ops-rule-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.ops-rule-main small {
+  margin-left: 0;
+}
+.ops-rule-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ops-rule-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ops-rule-edit {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.ops-rule-edit label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+}

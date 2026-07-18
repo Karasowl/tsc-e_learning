@@ -28,7 +28,6 @@ import {
   LogOut,
   Megaphone,
   Moon,
-  Palette,
   Plus,
   RefreshCw,
   Rocket,
@@ -45,11 +44,11 @@ import {
   Video,
   X
 } from "lucide-react";
-import { API_URL, authFetch, errorText } from "./apiClient";
-import { CourseEditor, type CourseMeta } from "./authoring";
+import { authFetch, authFetchRaw, errorText } from "./apiClient";
+import { CourseEditor, SERVICE_LINES, type CourseMeta } from "./authoring";
 import { ProfileView } from "./panels";
 import { ShieldMark } from "./guardApp";
-import { Modal, Wizard, confirmDialog, toast, type WizardStep } from "./ui";
+import { Wizard, confirmDialog, toast, type WizardStep } from "./ui";
 
 type User = {
   id: string;
@@ -71,6 +70,7 @@ type AdminCourse = {
 type DetailQuiz = {
   id: string;
   title: string;
+  status?: string;
   timeLimitSec: number | null;
   passingScorePercent: number | null;
   maxAttempts: number | null;
@@ -499,6 +499,19 @@ export function TeacherConsole({
       ) : null}
 
       <div className="tconsole-scroll">
+        {selectedId && status === "ARCHIVED" ? (
+          <div className="ops-alert card tone-warn" role="status">
+            <span className="ops-alert-icon" aria-hidden>
+              <AlertTriangle aria-hidden />
+            </span>
+            <div className="ops-alert-body">
+              <strong>Curso archivado</strong>
+              <span>
+                Los colaboradores no ven este curso. Cambia el estado desde la pestaña Estructura para reactivarlo.
+              </span>
+            </div>
+          </div>
+        ) : null}
         {selectedId ? (
           <>
             {tab === "estructura" ? (
@@ -679,7 +692,8 @@ function CourseList({
 }
 
 // ─── Asistente Nuevo curso (3 pasos) sobre la primitiva Wizard ──────────────────
-const SERVICE_LINES = ["Protección ejecutiva", "Custodia de mercancía", "Seguridad intramuros"];
+// SERVICE_LINES vive en authoring.tsx para que el asistente y el editor de curso
+// compartan el mismo catálogo de líneas de servicio.
 const LEVELS = ["Básico", "Intermedio", "Avanzado"];
 const COURSE_TEMPLATES: Array<{ id: string; name: string; description: string; modules: string[] }> = [
   {
@@ -949,12 +963,21 @@ function QuizRuleCard({ token, quiz, onSaved }: { token: string; quiz: DetailQui
     }
   }
 
+  const isDraft = (quiz.status ?? "").toUpperCase() === "DRAFT";
   return (
     <div className="tconsole-rule card">
       <div className="tconsole-rule-head">
         <strong>{quiz.title}</strong>
+        {quiz.status ? (
+          <span className={isDraft ? "pill pill--watch" : "pill pill--ok"}>{isDraft ? "Borrador" : "Publicado"}</span>
+        ) : null}
         <span className="mono-label">{quiz.questionCount} preguntas</span>
       </div>
+      {isDraft ? (
+        <p className="muted tconsole-quiz-draft-note">
+          Los exámenes en borrador no cuentan para aprobar el curso ni son visibles para los colaboradores.
+        </p>
+      ) : null}
       <div className="tconsole-rule-fields">
         <label>
           % para aprobar (vivo)
@@ -1243,14 +1266,16 @@ function PrerequisitesBlock({ token, courseId }: { token: string; courseId: stri
   );
 }
 
-// ─── Certificado del curso: vincular/quitar plantilla + acceso al diseñador ─────
+// ─── Certificado del curso: ver plantillas y vincular/quitar la del curso ──────
+// El instructor ve la biblioteca de plantillas (solo lectura) y puede asignar o
+// quitar la de su curso. El diseño de plantillas (CRUD) es tarea del administrador
+// desde el Centro de Operaciones.
 function CertificateBlock({ token, courseId }: { token: string; courseId: string }) {
   const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
   const [restricted, setRestricted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState("");
-  const [designerOpen, setDesignerOpen] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -1260,8 +1285,9 @@ function CertificateBlock({ token, courseId }: { token: string; courseId: string
       setRestricted(false);
     } catch (loadError) {
       const message = errorText(loadError);
-      // La biblioteca de plantillas es de administración: un instructor puro no la lista.
-      if (/admin/i.test(message) || /role/i.test(message) || /403/.test(message)) {
+      // Fallback elegante: si el servidor aún restringe la biblioteca al
+      // administrador, se explica sin romper la sección.
+      if (/admin/i.test(message) || /role/i.test(message) || /permiso/i.test(message) || /403/.test(message)) {
         setRestricted(true);
       } else {
         setError(message);
@@ -1313,11 +1339,6 @@ function CertificateBlock({ token, courseId }: { token: string; courseId: string
       <div className="tconsole-block-head">
         <Award aria-hidden />
         <h3>Certificado del curso</h3>
-        {!restricted ? (
-          <button className="btn btn--ghost tconsole-block-action" type="button" onClick={() => setDesignerOpen(true)}>
-            <Palette aria-hidden /> Diseñar plantillas
-          </button>
-        ) : null}
       </div>
 
       {restricted ? (
@@ -1328,6 +1349,9 @@ function CertificateBlock({ token, courseId }: { token: string; courseId: string
       ) : (
         <>
           {error ? <p className="error-line">{error}</p> : null}
+          <p className="muted">
+            Las plantillas las diseña el administrador. Aquí eliges cuál usa este curso.
+          </p>
           {linked ? (
             <div className="tconsole-cert-linked">
               <span className="mono-label">
@@ -1366,227 +1390,7 @@ function CertificateBlock({ token, courseId }: { token: string; courseId: string
         </>
       )}
 
-      {designerOpen ? (
-        <CertificateDesigner token={token} templates={templates} onClose={() => setDesignerOpen(false)} onChanged={load} />
-      ) : null}
     </div>
-  );
-}
-
-// ─── Diseñador de certificados: CRUD de plantillas con vista previa en vivo ──────
-const CERT_SAMPLE = {
-  courseTitle: "Protección ejecutiva",
-  studentName: "María Fernanda López",
-  folio: "TSC-2026-0148",
-  verificationCode: "9F3A-77BD",
-  issuedAt: "17 de julio de 2026"
-};
-
-function fillCertMarkers(text: string): string {
-  return text
-    .replaceAll("{{courseTitle}}", CERT_SAMPLE.courseTitle)
-    .replaceAll("{{studentName}}", CERT_SAMPLE.studentName)
-    .replaceAll("{{folio}}", CERT_SAMPLE.folio)
-    .replaceAll("{{verificationCode}}", CERT_SAMPLE.verificationCode)
-    .replaceAll("{{issuedAt}}", CERT_SAMPLE.issuedAt);
-}
-
-function CertificateDesigner({
-  token,
-  templates,
-  onClose,
-  onChanged
-}: {
-  token: string;
-  templates: CertificateTemplate[];
-  onClose: () => void;
-  onChanged: () => Promise<void> | void;
-}) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [title, setTitle] = useState("");
-  const [legend, setLegend] = useState("");
-  const [backgroundUrl, setBackgroundUrl] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  function resetForm() {
-    setEditingId(null);
-    setName("");
-    setTitle("");
-    setLegend("");
-    setBackgroundUrl("");
-  }
-
-  function editTemplate(template: CertificateTemplate) {
-    setEditingId(template.id);
-    setName(template.name);
-    setTitle(template.body.title ?? "");
-    setLegend(template.body.legend ?? "");
-    setBackgroundUrl(template.body.backgroundUrl ?? "");
-  }
-
-  async function save() {
-    if (!name.trim()) {
-      toast.error("La plantilla necesita un nombre.");
-      return;
-    }
-    setBusy(true);
-    const body: Record<string, string> = {};
-    if (title.trim()) {
-      body.title = title.trim();
-    }
-    if (legend.trim()) {
-      body.legend = legend.trim();
-    }
-    if (backgroundUrl.trim()) {
-      body.backgroundUrl = backgroundUrl.trim();
-    }
-    try {
-      if (editingId) {
-        await authFetch(token, `/admin/certificate-templates/${editingId}`, {
-          method: "PUT",
-          body: JSON.stringify({ name: name.trim(), body })
-        });
-      } else {
-        await authFetch(token, "/admin/certificate-templates", {
-          method: "POST",
-          body: JSON.stringify({ name: name.trim(), body })
-        });
-      }
-      toast.success("Plantilla guardada.");
-      resetForm();
-      await onChanged();
-    } catch (saveError) {
-      toast.error(errorText(saveError));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(id: string) {
-    const confirmed = await confirmDialog({
-      title: "Eliminar plantilla",
-      message: "Los cursos vinculados volverán al diseño de certificado por defecto.",
-      confirmLabel: "Eliminar",
-      danger: true
-    });
-    if (!confirmed) {
-      return;
-    }
-    setBusy(true);
-    try {
-      await authFetch(token, `/admin/certificate-templates/${id}`, { method: "DELETE" });
-      if (editingId === id) {
-        resetForm();
-      }
-      toast.success("Plantilla eliminada.");
-      await onChanged();
-    } catch (removeError) {
-      toast.error(errorText(removeError));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const previewTitle = fillCertMarkers(title.trim() || "Constancia de finalización");
-  const previewLegend = fillCertMarkers(legend.trim() || "Se otorga a {{studentName}} por completar {{courseTitle}}.");
-
-  return (
-    <Modal title="Diseñador de certificados" onClose={onClose} size="xl" bodyClassName="cert-designer-body">
-      <div className="cert-designer">
-        <div className="cert-designer-form">
-          <div className="cert-designer-list">
-            <div className="tconsole-block-head">
-              <h3>Plantillas</h3>
-              <button className="btn btn--ghost tconsole-block-action" type="button" onClick={resetForm}>
-                <Plus aria-hidden /> Nueva
-              </button>
-            </div>
-            {templates.length === 0 ? (
-              <p className="empty-state">Aún no hay plantillas. Crea la primera.</p>
-            ) : (
-              <ul className="cert-template-list">
-                {templates.map((template) => (
-                  <li className={`cert-template-item${editingId === template.id ? " is-active" : ""}`} key={template.id}>
-                    <button type="button" className="cert-template-open" onClick={() => editTemplate(template)}>
-                      <Award aria-hidden />
-                      <span>{template.name}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-button"
-                      disabled={busy}
-                      onClick={() => void remove(template.id)}
-                      title="Eliminar plantilla"
-                      aria-label={`Eliminar ${template.name}`}
-                    >
-                      <Trash2 aria-hidden />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <label>
-            Nombre de la plantilla
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="p. ej. Protección ejecutiva 2026" />
-          </label>
-          <label>
-            Título del certificado
-            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Constancia de finalización" />
-          </label>
-          <label>
-            Leyenda
-            <textarea
-              rows={3}
-              value={legend}
-              onChange={(event) => setLegend(event.target.value)}
-              placeholder="Se otorga a {{studentName}} por completar {{courseTitle}}."
-            />
-          </label>
-          <label>
-            Fondo (URL de imagen, opcional)
-            <input value={backgroundUrl} onChange={(event) => setBackgroundUrl(event.target.value)} placeholder="https://…" />
-          </label>
-          <p className="muted cert-markers">
-            Marcadores disponibles: {"{{courseTitle}} · {{studentName}} · {{folio}} · {{verificationCode}} · {{issuedAt}}"}
-          </p>
-          <div className="cert-designer-actions">
-            {editingId ? (
-              <button className="btn btn--ghost" type="button" onClick={resetForm} disabled={busy}>
-                Cancelar edición
-              </button>
-            ) : null}
-            <button className="btn btn--brand" type="button" onClick={() => void save()} disabled={busy}>
-              <Save aria-hidden /> {editingId ? "Guardar cambios" : "Crear plantilla"}
-            </button>
-          </div>
-        </div>
-
-        <div className="cert-preview-col">
-          <span className="mono-label">
-            <Eye aria-hidden /> Vista previa
-          </span>
-          <div
-            className="cert-preview"
-            style={backgroundUrl.trim() ? { backgroundImage: `url(${backgroundUrl.trim()})` } : undefined}
-          >
-            <div className="cert-preview-inner">
-              <ShieldMark size={38} />
-              <h2>{previewTitle}</h2>
-              <p className="cert-preview-legend">{previewLegend}</p>
-              <div className="cert-preview-meta">
-                <span>Folio {CERT_SAMPLE.folio}</span>
-                <span>Código {CERT_SAMPLE.verificationCode}</span>
-                <span>{CERT_SAMPLE.issuedAt}</span>
-              </div>
-            </div>
-          </div>
-          <small className="muted">Datos de ejemplo. En el certificado real se sustituyen por los del colaborador.</small>
-        </div>
-      </div>
-    </Modal>
   );
 }
 
@@ -1631,7 +1435,7 @@ function usePreviewVideoToken(token: string, assetId: string | null) {
     }
     let cancelled = false;
     setState({ url: null, error: false });
-    fetch(`${API_URL}/assets/${assetId}/video-token`, { headers: token ? { authorization: `Bearer ${token}` } : {} })
+    authFetchRaw(token, `/assets/${assetId}/video-token`)
       .then(async (response) => {
         if (!response.ok) {
           throw new Error("token");

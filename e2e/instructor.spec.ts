@@ -233,7 +233,10 @@ test.describe("instructor · Fase D Ola 2 (1280x800)", () => {
     await page.locator(".tconsole-tab", { hasText: "Anuncios" }).click();
     await expect(page.getByRole("heading", { name: "Anuncios del curso" })).toBeVisible();
 
-    const annTitle = `Simulacro nocturno ${Date.now()}`;
+    // Título FIJO: el spec borra su anuncio al final, y si una corrida muere a
+    // mitad, el global-setup (db:reset-qa-residues) limpia el anuncio y los
+    // avisos in-app de curso que el borrado del anuncio conserva por diseño.
+    const annTitle = "Simulacro nocturno (QA)";
     const form = page.locator(".tconsole-anuncio-form");
     await form.getByLabel("Título").fill(annTitle);
     await form.getByLabel("Mensaje").fill("Repaso del protocolo operativo este viernes a las 18:00.");

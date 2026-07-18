@@ -6,6 +6,76 @@ export function assetFileUrl(assetId: string) {
   return `${API_URL}/assets/${assetId}/file`;
 }
 
+// Sesión vencida o inválida: se limpia y se recarga para volver al login.
+// Centralizado para que TODOS los fetch autenticados compartan el mismo trato.
+function clearSessionAndReload() {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem("tsc_token");
+    window.localStorage.removeItem("tsc_user");
+    window.location.reload();
+  }
+}
+
+// Convierte el cuerpo de error del servidor en un mensaje legible en español.
+// Los errores de validación llegan como objeto (formErrors/fieldErrors); se toma
+// el primer mensaje disponible y, si no hay ninguno, un texto genérico por código.
+export function apiErrorMessage(body: unknown, status: number): string {
+  const error = body && typeof body === "object" && "error" in body ? (body as { error?: unknown }).error : body;
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  if (error && typeof error === "object") {
+    const shaped = error as { formErrors?: unknown; fieldErrors?: unknown; message?: unknown };
+    if (typeof shaped.message === "string" && shaped.message.trim()) {
+      return shaped.message;
+    }
+    const issues: string[] = [];
+    if (Array.isArray(shaped.formErrors)) {
+      issues.push(...shaped.formErrors.filter((item): item is string => typeof item === "string"));
+    }
+    if (shaped.fieldErrors && typeof shaped.fieldErrors === "object") {
+      for (const value of Object.values(shaped.fieldErrors as Record<string, unknown>)) {
+        if (Array.isArray(value)) {
+          issues.push(...value.filter((item): item is string => typeof item === "string"));
+        }
+      }
+    }
+    const first = issues.find((item) => item.trim().length > 0);
+    if (first) {
+      return first;
+    }
+  }
+  if (status === 400 || status === 422) {
+    return "Revisa los datos ingresados";
+  }
+  if (status === 403) {
+    return "No tienes permiso para realizar esta acción";
+  }
+  if (status === 404) {
+    return "No se encontró el recurso solicitado";
+  }
+  if (status >= 500) {
+    return "El servidor tuvo un problema. Intenta de nuevo";
+  }
+  return `No se pudo completar la operación (código ${status})`;
+}
+
+// Fetch autenticado "crudo" (para descargas, HTML, streams): aplica el mismo
+// tratamiento de sesión vencida (401 → limpiar y recargar) y devuelve la Response.
+export async function authFetchRaw(token: string, path: string, init: RequestInit = {}): Promise<Response> {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${token}`,
+      ...(init.headers ?? {})
+    }
+  });
+  if (response.status === 401) {
+    clearSessionAndReload();
+  }
+  return response;
+}
+
 export async function authFetch<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -16,13 +86,15 @@ export async function authFetch<T>(token: string, path: string, init: RequestIni
     }
   });
   if (!response.ok) {
-    if (response.status === 401 && typeof window !== "undefined") {
-      window.localStorage.removeItem("tsc_token");
-      window.localStorage.removeItem("tsc_user");
-      window.location.reload();
+    if (response.status === 401) {
+      clearSessionAndReload();
     }
-    const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: unknown };
-    throw new Error(typeof body.error === "string" ? body.error : `HTTP ${response.status}`);
+    const body = (await response.json().catch(() => ({ error: response.statusText }))) as unknown;
+    throw new Error(apiErrorMessage(body, response.status));
+  }
+  // Respuestas sin cuerpo (p. ej. DELETE → 204) no se intentan parsear.
+  if (response.status === 204) {
+    return undefined as T;
   }
   return response.json() as Promise<T>;
 }
@@ -46,9 +118,8 @@ export async function uploadAsset(
     form.append("lessonId", opts.lessonId);
   }
   form.append("file", file);
-  const response = await fetch(`${API_URL}/assets`, {
+  const response = await authFetchRaw(token, "/assets", {
     method: "POST",
-    headers: { authorization: `Bearer ${token}` },
     body: form
   });
   if (!response.ok) {
@@ -59,9 +130,7 @@ export async function uploadAsset(
 }
 
 export async function downloadAsset(token: string, assetId: string, filename: string): Promise<void> {
-  const response = await fetch(`${API_URL}/assets/${assetId}/file`, {
-    headers: { authorization: `Bearer ${token}` }
-  });
+  const response = await authFetchRaw(token, `/assets/${assetId}/file`);
   if (!response.ok) {
     throw new Error("No se pudo descargar el archivo");
   }

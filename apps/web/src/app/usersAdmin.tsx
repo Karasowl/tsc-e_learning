@@ -77,6 +77,7 @@ export function UsersRolesAdmin({
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [term, setTerm] = useState(initialQuery ?? "");
   const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -100,6 +101,9 @@ export function UsersRolesAdmin({
       }
       if (roleFilter) {
         params.set("role", roleFilter);
+      }
+      if (statusFilter) {
+        params.set("status", statusFilter);
       }
       const query = params.toString();
       const data = await authFetch<{ users: AdminUser[] }>(token, `/admin/users${query ? `?${query}` : ""}`);
@@ -313,6 +317,44 @@ export function UsersRolesAdmin({
     }
   }
 
+  // Cuenta en estado Invitado (sin contraseña propia): "reactivarla" la rompería
+  // porque no podría iniciar sesión. En su lugar se reenvía la invitación: el
+  // servidor regenera el token y devuelve el enlace de activación si el correo
+  // automático no salió.
+  async function resendInvitation(user: AdminUser) {
+    setBusy(true);
+    setError(null);
+    setPendingInvite(null);
+    setCopied(false);
+    try {
+      const result = await authFetch<{ user: AdminUser; invitation: InvitationResult }>(token, "/admin/users/invite", {
+        method: "POST",
+        body: JSON.stringify({
+          displayName: user.displayName,
+          email: user.email,
+          roles: user.roles.length > 0 ? user.roles : ["STUDENT"],
+          ...(user.serviceLabel ? { serviceLabel: user.serviceLabel } : {})
+        })
+      });
+      await load();
+      if (result.invitation.emailed) {
+        toast.success(`Invitación reenviada por correo a ${user.email}.`);
+      } else if (result.invitation.activationUrl) {
+        setPendingInvite({ email: user.email, url: result.invitation.activationUrl });
+        toast.success("Invitación regenerada. Comparte el nuevo enlace de activación.");
+      } else {
+        toast.success("Invitación regenerada.");
+      }
+    } catch (resendError) {
+      // Un 409 del servidor (p. ej. la cuenta ya se activó) llega con su mensaje.
+      const message = errorText(resendError);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function copyInviteLink() {
     if (!pendingInvite) {
       return;
@@ -465,6 +507,15 @@ export function UsersRolesAdmin({
             ))}
           </select>
         </label>
+        <label>
+          Estado
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">Todos</option>
+            <option value="ACTIVE">Activo</option>
+            <option value="DISABLED">Suspendido</option>
+            <option value="INVITED">Invitado</option>
+          </select>
+        </label>
         <button className="secondary-button" disabled={busy} type="submit">
           <Search aria-hidden /> Buscar
         </button>
@@ -540,6 +591,10 @@ export function UsersRolesAdmin({
                           {user.status === "ACTIVE" ? (
                             <button className="secondary-button" disabled={busy} onClick={() => void setStatus(user.id, "DISABLED")} type="button">
                               Suspender
+                            </button>
+                          ) : user.status === "INVITED" ? (
+                            <button className="secondary-button" disabled={busy} onClick={() => void resendInvitation(user)} type="button">
+                              <Send aria-hidden /> Reenviar invitación
                             </button>
                           ) : (
                             <button className="secondary-button" disabled={busy} onClick={() => void setStatus(user.id, "ACTIVE")} type="button">

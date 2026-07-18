@@ -16,7 +16,9 @@ export type AuditActionName =
   | "ENROLLMENT_GRANTED"
   | "ENROLLMENT_REVOKED"
   | "ENROLLMENT_BULK_UPDATED"
-  | "ANNOUNCEMENT_PUBLISHED";
+  | "ANNOUNCEMENT_PUBLISHED"
+  | "NOTIFICATION_RULE_UPDATED"
+  | "NOTIFICATION_RULE_DELETED";
 
 type AuditLogger = { warn: (obj: unknown, msg?: string) => void };
 

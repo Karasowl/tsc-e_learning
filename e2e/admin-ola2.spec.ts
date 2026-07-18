@@ -149,8 +149,10 @@ test.describe("admin ola2 · centro de operaciones (1280x800)", () => {
     await expect(page.locator(".ops-announcements")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("heading", { name: "Anuncios de la plataforma" })).toBeVisible();
 
-    const stamp = Date.now();
-    const title = `Simulacro de gobierno ${stamp}`;
+    // Título FIJO: el global-setup (db:reset-qa-residues) borra este anuncio y
+    // sus avisos in-app antes de cada suite, así la lista de anuncios y las
+    // campanas de los estudiantes no crecen corrida tras corrida.
+    const title = "Simulacro de gobierno (QA)";
     const body = "Aviso global de prueba: verifica tus inscripciones vigentes con tu supervisor.";
 
     const form = page.locator(".ops-announcements form.tconsole-anuncio-form");

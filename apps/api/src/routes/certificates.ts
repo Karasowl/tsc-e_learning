@@ -94,7 +94,7 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
     });
 
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
 
     const isOwnerTeacher = auth.roles.includes("TEACHER") && course.teacherId === auth.userId;
@@ -255,11 +255,11 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
     });
 
     if (!certificate) {
-      return reply.code(404).send({ error: "Certificate not found" });
+      return reply.code(404).send({ error: "No se encontró el diploma" });
     }
 
     if (!canReadCertificate(auth, certificate.userId, certificate.course.teacherId)) {
-      return reply.code(403).send({ error: "Certificate access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este diploma" });
     }
 
     // Si el diploma se emitió con una plantilla vinculada, se renderiza desde su
@@ -287,11 +287,11 @@ export async function registerCertificateRoutes(server: FastifyInstance, config:
     });
 
     if (!certificate) {
-      return reply.code(404).send({ error: "Certificate not found" });
+      return reply.code(404).send({ error: "No se encontró el diploma" });
     }
 
     if (!canReadCertificate(auth, certificate.userId, certificate.course.teacherId)) {
-      return reply.code(403).send({ error: "Certificate access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este diploma" });
     }
 
     const templateBody = resolveCertificateTemplateBody(certificate.template?.body ?? null);

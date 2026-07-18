@@ -3,10 +3,9 @@ import type { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { isAdmin, requireAuth, type AuthContext } from "../lib/auth.js";
-import { emitStudentNotification } from "../lib/notifications.js";
+import { recomputeCourseCompletion } from "../lib/course-progress.js";
 import {
   XP_LESSON_COMPLETED,
-  awardCourseCompletionBadges,
   detectAscension,
   grantXp
 } from "../lib/gamification.js";
@@ -116,7 +115,7 @@ export async function registerCourseRoutes(server: FastifyInstance) {
           {
             OR: [{ id: parsed.data.courseRef }, { slug: parsed.data.courseRef }]
           },
-          courseAccessWhere(auth)
+          courseDetailAccessWhere(auth)
         ]
       },
       include: {
@@ -168,7 +167,7 @@ export async function registerCourseRoutes(server: FastifyInstance) {
     });
 
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
 
     const thumbnail = course.thumbnailAssetId
@@ -210,17 +209,13 @@ export async function registerCourseRoutes(server: FastifyInstance) {
 
     const enrollment = course.enrollments[0] ?? null;
 
+    // El estudiante solo ve exámenes publicados; el dueño del curso y el admin
+    // conservan la vista completa (autoría/preview de borradores).
+    const seesUnpublishedQuizzes = isAdmin(auth) || (auth.roles.includes("TEACHER") && course.teacherId === auth.userId);
+
     return {
       course: {
-        id: course.id,
-        title: course.title,
-        slug: course.slug,
-        description: course.description,
-        excerpt: course.excerpt,
-        status: course.status,
-        version: course.version,
-        level: course.level,
-        durationSec: course.durationSec,
+        ...serializeCourseDetailHeader(course),
         teacher: course.teacher,
         thumbnail,
         // Campos aditivos (Ola 2, Fase A): informativos, sin enforcement.
@@ -260,7 +255,9 @@ export async function registerCourseRoutes(server: FastifyInstance) {
             locked: lessonGate.get(lesson.id)?.locked ?? false,
             assets: lesson.assets.map(serializeAsset)
           })),
-          quizzes: module.quizzes.map((quiz) => ({
+          quizzes: module.quizzes
+            .filter((quiz) => seesUnpublishedQuizzes || quiz.status === "PUBLISHED")
+            .map((quiz) => ({
             id: quiz.id,
             title: quiz.title,
             slug: quiz.slug,
@@ -309,11 +306,11 @@ export async function registerCourseRoutes(server: FastifyInstance) {
     });
 
     if (!lesson) {
-      return reply.code(404).send({ error: "Lesson not found" });
+      return reply.code(404).send({ error: "No se encontró la clase" });
     }
 
     if (!canUseCourse(auth, lesson.course.teacherId, lesson.course.enrollments.length > 0)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     if (lesson.course.status === "ARCHIVED") {
@@ -396,19 +393,12 @@ export async function registerCourseRoutes(server: FastifyInstance) {
       }
     }
 
-    const courseProgress = await updateCourseProgress(auth.userId, lesson.courseId);
-    if (courseProgress.newlyCompleted) {
-      await logCourseCompleted(auth.userId, lesson.courseId, lesson.course.title);
-      const completedCourses = await getPrisma().enrollment.count({
-        where: { userId: auth.userId, status: "COMPLETED" }
-      });
-      await awardCourseCompletionBadges(getPrisma(), {
-        userId: auth.userId,
-        courseId: lesson.courseId,
-        completedCourses,
-        awardedAt: completedAt
-      });
-    }
+    const courseProgress = await recomputeCourseCompletion(getPrisma(), {
+      userId: auth.userId,
+      courseId: lesson.courseId,
+      courseTitle: lesson.course.title,
+      completedAt
+    });
 
     // XP real, idempotente: la primera vez que se completa la leccion suma
     // +10 XP; re-completar no vuelve a otorgar (la clave LESSON:<id> ya existe).
@@ -435,15 +425,6 @@ export async function registerCourseRoutes(server: FastifyInstance) {
         rankName: ascension.rankName
       }
     };
-  });
-}
-
-async function logCourseCompleted(userId: string, courseId: string, courseTitle: string) {
-  await emitStudentNotification({
-    eventType: "COURSE_COMPLETED",
-    userId,
-    courseId,
-    payload: { courseTitle }
   });
 }
 
@@ -478,81 +459,69 @@ function canUseCourse(auth: AuthContext, teacherId: string | null, isEnrolled: b
   return isAdmin(auth) || (auth.roles.includes("TEACHER") && teacherId === auth.userId) || isEnrolled;
 }
 
-async function updateCourseProgress(userId: string, courseId: string) {
-  const [totalLessons, completedLessons] = await Promise.all([
-    getPrisma().lesson.count({ where: { courseId } }),
-    getPrisma().lessonProgress.count({
-      where: {
-        userId,
-        lesson: { courseId },
-        completedAt: { not: null }
-      }
-    })
-  ]);
+/**
+ * Campos escalares de la cabecera del detalle de curso. Incluye serviceLine
+ * para que el editor del instructor pueda precargar el campo (el estudiante lo
+ * recibe también: es una etiqueta de catálogo, no un dato sensible). Pura para
+ * poder probarse sin base de datos.
+ */
+export function serializeCourseDetailHeader(course: {
+  id: string;
+  title: string;
+  slug: string;
+  description: string | null;
+  excerpt: string | null;
+  status: string;
+  version: number;
+  level: string | null;
+  serviceLine: string | null;
+  durationSec: number | null;
+}) {
+  return {
+    id: course.id,
+    title: course.title,
+    slug: course.slug,
+    description: course.description,
+    excerpt: course.excerpt,
+    status: course.status,
+    version: course.version,
+    level: course.level,
+    serviceLine: course.serviceLine,
+    durationSec: course.durationSec
+  };
+}
 
-  const progressPercent = totalLessons > 0 ? Number(((completedLessons / totalLessons) * 100).toFixed(2)) : 0;
-  const lessonsDone = totalLessons > 0 && completedLessons >= totalLessons;
-
-  // A course is only "completed" when its lessons are done AND every published
-  // quiz has a passing attempt, so a diploma can't be earned without passing the
-  // exam(s). Courses with no published quiz complete on lessons alone.
-  let quizzesPassed = true;
-  if (lessonsDone) {
-    const quizzes = await getPrisma().quiz.findMany({
-      where: { courseId, status: "PUBLISHED" },
-      select: { id: true }
-    });
-    if (quizzes.length > 0) {
-      const quizIds = quizzes.map((quiz) => quiz.id);
-      const passed = await getPrisma().quizAttempt.findMany({
-        where: { userId, status: "PASSED", quizId: { in: quizIds } },
-        select: { quizId: true },
-        distinct: ["quizId"]
-      });
-      quizzesPassed = passed.length >= quizIds.length;
-    }
+/**
+ * Acceso al DETALLE de un curso. A diferencia del catálogo (courseAccessWhere),
+ * el dueño del curso y el admin sí pueden cargar un curso ARCHIVED: el editor
+ * del instructor navega por el detalle y archivar no debe romperlo. El
+ * estudiante (o un docente inscrito en curso ajeno) sigue sin ver archivados.
+ * Pura para poder probarse sin base de datos.
+ */
+export function courseDetailAccessWhere(auth: AuthContext): Prisma.CourseWhereInput {
+  if (isAdmin(auth)) {
+    return {};
   }
-  const requirementsMet = lessonsDone && quizzesPassed;
 
-  const enrollment = await getPrisma().enrollment.findUnique({
-    where: {
-      userId_courseId: {
-        userId,
-        courseId
-      }
-    }
-  });
-
-  if (!enrollment) {
+  if (auth.roles.includes("TEACHER")) {
     return {
-      progressPercent,
-      completedAt: null,
-      newlyCompleted: false
+      OR: [
+        { teacherId: auth.userId },
+        {
+          status: { not: "ARCHIVED" },
+          enrollments: {
+            some: { userId: auth.userId }
+          }
+        }
+      ]
     };
   }
 
-  const newlyCompleted = Boolean(requirementsMet && enrollment.status !== "COMPLETED");
-
-  const updated = await getPrisma().enrollment.update({
-    where: {
-      userId_courseId: {
-        userId,
-        courseId
-      }
-    },
-    data: {
-      progressPercent,
-      // Never wipe an existing completion nor downgrade status (protects the
-      // already-completed enrollments migrated from WordPress).
-      completedAt: requirementsMet ? enrollment.completedAt ?? new Date() : enrollment.completedAt,
-      status: requirementsMet ? "COMPLETED" : enrollment.status
-    }
-  });
-
   return {
-    progressPercent: decimalToNumber(updated.progressPercent),
-    completedAt: updated.completedAt,
-    newlyCompleted
+    status: "PUBLISHED",
+    enrollments: {
+      some: { userId: auth.userId }
+    }
   };
 }
 

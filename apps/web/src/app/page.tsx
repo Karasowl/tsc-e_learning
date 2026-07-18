@@ -33,7 +33,8 @@ import {
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DOMPurify from "dompurify";
-import { assetFileUrl, downloadAsset } from "./apiClient";
+import { apiErrorMessage, assetFileUrl, authFetchRaw, downloadAsset } from "./apiClient";
+import { summarizeReportStatuses } from "./reportPrint";
 import { AuthoringView } from "./authoring";
 import { AdminOpsCenter } from "./opsCenter";
 import { TeacherConsole } from "./teacherConsole";
@@ -425,11 +426,18 @@ export default function Home() {
 
   function goToLesson(delta: number) {
     const next = flatLessons[activeLessonIndex + delta];
-    if (next) {
+    // La navegación nunca aterriza en una lección bloqueada por el orden
+    // secuencial: primero deben completarse las anteriores.
+    if (next && !(next.locked && !next.completed)) {
       setQuizAttempt(null);
       setActiveLessonId(next.id);
     }
   }
+
+  // "Siguiente" se deshabilita cuando la próxima lección sigue bloqueada.
+  const nextLesson = activeLessonIndex >= 0 ? flatLessons[activeLessonIndex + 1] ?? null : null;
+  const nextLessonBlocked = Boolean(nextLesson?.locked && !nextLesson?.completed);
+  const hasNextLesson = activeLessonIndex >= 0 && activeLessonIndex < flatLessons.length - 1 && !nextLessonBlocked;
 
   useEffect(() => {
     const storedToken = window.localStorage.getItem("tsc_token");
@@ -477,8 +485,12 @@ export default function Home() {
         window.localStorage.removeItem("tsc_user");
         window.location.reload();
       }
-      const body = await response.json().catch(() => ({ error: response.statusText })) as { error?: unknown };
-      throw new ApiError(typeof body.error === "string" ? body.error : `HTTP ${response.status}`, response.status);
+      const body = (await response.json().catch(() => ({ error: response.statusText }))) as unknown;
+      throw new ApiError(apiErrorMessage(body, response.status), response.status);
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
     }
 
     return response.json() as Promise<T>;
@@ -743,7 +755,10 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      const payload = await api<{ attempt: AttemptSummary; grade: { scorePercent: number; earnedMarks: number; totalMarks: number } }>(
+      const payload = await api<{
+        attempt: AttemptSummary;
+        grade: { scorePercent: number; earnedMarks: number; totalMarks: number };
+      }>(
         `/quizzes/attempts/${quizAttempt.attempt.id}/submit`,
         {
           method: "POST",
@@ -773,6 +788,19 @@ export default function Home() {
         // curso". Reintentar sigue creando un intento nuevo.
         await loadCourse(selectedCourse.id, { preserveAttempt: true });
       }
+      // Refresca también el catálogo, los diplomas y la gamificación sin
+      // recargar la página: el estado COMPLETED que fija el servidor al aprobar
+      // habilita el CTA "Reclamar diploma", y el XP y la insignia de aprobar
+      // aparecen al instante en la cáscara del guardia. El submit no trae bloque
+      // de gamificación (los puntos se otorgan por otros eventos), así que
+      // applyGamification solo re-lee progreso e insignias.
+      await Promise.all([
+        api<{ courses: CourseSummary[] }>("/courses")
+          .then((coursePayload) => setCourses(coursePayload.courses))
+          .catch(() => undefined),
+        loadCertificates().catch(() => undefined)
+      ]);
+      await applyGamification();
     } catch (submitError) {
       handleActionError(submitError);
     } finally {
@@ -807,9 +835,7 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(`${API_URL}/certificates/${certificateId}/html`, {
-        headers: token ? { authorization: `Bearer ${token}` } : {}
-      });
+      const response = await authFetchRaw(token ?? "", `/certificates/${certificateId}/html`);
       if (!response.ok) {
         throw new Error("No se pudo abrir el diploma");
       }
@@ -826,9 +852,7 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(`${API_URL}/certificates/${certificateId}/pdf`, {
-        headers: token ? { authorization: `Bearer ${token}` } : {}
-      });
+      const response = await authFetchRaw(token ?? "", `/certificates/${certificateId}/pdf`);
       if (!response.ok) {
         throw new Error("No se pudo generar el PDF del diploma");
       }
@@ -844,9 +868,20 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(`${API_URL}/reports/students/export.xlsx`, {
-        headers: token ? { authorization: `Bearer ${token}` } : {}
-      });
+      // El export respeta los filtros activos del reporte: el servidor filtra
+      // con `q` (búsqueda) y `status` (resultado del veredicto).
+      const params = new URLSearchParams();
+      if (reportQuery.trim()) {
+        params.set("q", reportQuery.trim());
+      }
+      if (reportStatusFilter) {
+        params.set("status", reportStatusFilter);
+      }
+      const exportQuery = params.toString();
+      const response = await authFetchRaw(
+        token ?? "",
+        `/reports/students/export.xlsx${exportQuery ? `?${exportQuery}` : ""}`
+      );
       if (!response.ok) {
         throw new Error("No se pudo generar el Excel");
       }
@@ -864,7 +899,11 @@ export default function Home() {
       setError("El navegador bloqueó la ventana emergente. Habilita las ventanas emergentes para exportar el PDF.");
       return;
     }
-    printWindow.document.write(buildReportPrintHtml(reportRows, reportSummary));
+    // Se imprime lo que se ve: las filas ya filtradas y ordenadas del reporte,
+    // con el resumen recalculado sobre esas mismas filas (no el global).
+    printWindow.document.write(
+      buildReportPrintHtml(filteredReportRows, summarizeReportStatuses(filteredReportRows, reportSummary))
+    );
     printWindow.document.close();
     printWindow.focus();
   }
@@ -1067,7 +1106,7 @@ export default function Home() {
                 onPrev={() => goToLesson(-1)}
                 onNext={() => goToLesson(1)}
                 hasPrev={activeLessonIndex > 0}
-                hasNext={activeLessonIndex >= 0 && activeLessonIndex < flatLessons.length - 1}
+                hasNext={hasNextLesson}
               />
             ) : (
               <p className="empty-state">Selecciona una lección.</p>
@@ -1563,7 +1602,7 @@ export default function Home() {
                           onPrev={() => goToLesson(-1)}
                           onNext={() => goToLesson(1)}
                           hasPrev={activeLessonIndex > 0}
-                          hasNext={activeLessonIndex >= 0 && activeLessonIndex < flatLessons.length - 1}
+                          hasNext={hasNextLesson}
                         />
                       ) : (
                         <p className="empty-state">Selecciona una lección.</p>
@@ -2384,11 +2423,38 @@ function LessonPanel({
   hasPrev: boolean;
   hasNext: boolean;
 }) {
-  const media = resolveLessonMedia(lesson);
+  const blocked = Boolean(lesson.locked && !lesson.completed);
+  const media = blocked ? null : resolveLessonMedia(lesson);
   const videoAssetId = media?.kind === "asset" ? media.assetId : null;
   const videoToken = useVideoToken(token, videoAssetId);
   // El asset que se reproduce como video no se repite en la lista de descargas.
   const downloadableAssets = videoAssetId ? lesson.assets.filter((asset) => asset.id !== videoAssetId) : lesson.assets;
+  // Lección bloqueada por el orden secuencial: no se muestra su contenido,
+  // solo el candado y la guía para desbloquearla.
+  if (blocked) {
+    return (
+      <article className="content-surface">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">{lessonKindLabel(lesson)}</p>
+            <h2>{lesson.title}</h2>
+          </div>
+        </div>
+        <div className="empty-state lesson-locked-state">
+          <Lock aria-hidden />
+          <p>Completa las lecciones anteriores para desbloquear esta clase.</p>
+        </div>
+        <div className="lesson-nav">
+          <button className="secondary-button" disabled={!hasPrev} onClick={onPrev} type="button">
+            <ArrowLeft aria-hidden /> Anterior
+          </button>
+          <button className="secondary-button" disabled type="button">
+            Siguiente <ChevronRight aria-hidden />
+          </button>
+        </div>
+      </article>
+    );
+  }
   return (
     <article className="content-surface">
       <div className="section-header">
@@ -2900,9 +2966,7 @@ function useVideoToken(token: string, assetId: string | null) {
     }
     let cancelled = false;
     setState({ url: null, loading: true, error: false });
-    fetch(`${API_URL}/assets/${assetId}/video-token`, {
-      headers: token ? { authorization: `Bearer ${token}` } : {}
-    })
+    authFetchRaw(token, `/assets/${assetId}/video-token`)
       .then(async (response) => {
         if (!response.ok) {
           throw new Error("token");

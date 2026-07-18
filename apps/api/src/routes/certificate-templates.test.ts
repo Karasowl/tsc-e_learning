@@ -1,6 +1,20 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { serializeTemplate } from "./certificate-templates.js";
+import { canReadCertificateTemplates, serializeTemplate } from "./certificate-templates.js";
+
+describe("canReadCertificateTemplates (lectura del catálogo de plantillas)", () => {
+  it("permite la lectura a un docente (necesita listar para vincular a su curso)", () => {
+    assert.equal(canReadCertificateTemplates({ userId: "t1", roles: ["TEACHER"] }), true);
+  });
+
+  it("permite la lectura a un admin", () => {
+    assert.equal(canReadCertificateTemplates({ userId: "a1", roles: ["ADMIN"] }), true);
+  });
+
+  it("niega la lectura a un estudiante", () => {
+    assert.equal(canReadCertificateTemplates({ userId: "s1", roles: ["STUDENT"] }), false);
+  });
+});
 
 describe("serializeTemplate", () => {
   it("expone los courseIds vinculados y conserva el diseño (body)", () => {

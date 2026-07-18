@@ -32,9 +32,10 @@ const LEGEND_COLOR = rgb(0, 0, 0);
 
 export type CertificatePdfOptions = {
   backgroundPath?: string | undefined;
-  // Plantilla vinculada al curso: sobreescribe el título y la leyenda. La imagen
-  // de fondo del PDF sigue siendo la del asset local configurado (ver nota en el
-  // reporte); template.backgroundUrl solo afecta a la vista HTML.
+  // Plantilla vinculada al curso: sobreescribe el título, la leyenda y (si
+  // define backgroundUrl) la imagen de fondo del PDF, igual que la vista HTML.
+  // Si el fondo de la plantilla no puede obtenerse, se cae al fondo local
+  // configurado; jamás se rompe la descarga del diploma por el fondo.
   template?: CertificateTemplateBody | undefined;
 };
 
@@ -47,19 +48,29 @@ export async function renderCertificatePdf(
   const page = doc.addPage([PAGE_W, PAGE_H]);
 
   const backgroundPath = options.backgroundPath ?? DEFAULT_CERTIFICATE_BACKGROUND_PATH;
-  const backgroundBytes = await loadBackground(backgroundPath);
+  const backgroundBytes =
+    (options.template?.backgroundUrl ? await loadTemplateBackground(options.template.backgroundUrl) : null) ??
+    (await loadBackground(backgroundPath));
   if (backgroundBytes) {
-    const image = await doc.embedJpg(backgroundBytes);
-    // Replicate CSS background-size:cover (scale to fill, center, crop overflow).
-    const scale = Math.max(PAGE_W / image.width, PAGE_H / image.height);
-    const width = image.width * scale;
-    const height = image.height * scale;
-    page.drawImage(image, {
-      x: (PAGE_W - width) / 2,
-      y: (PAGE_H - height) / 2,
-      width,
-      height
-    });
+    // Fail-soft: un fondo ilegible (formato raro, bytes corruptos) genera el PDF
+    // sin fondo en lugar de romper la descarga del diploma.
+    try {
+      const kind = detectImageKind(backgroundBytes);
+      const image =
+        kind === "png" ? await doc.embedPng(backgroundBytes) : await doc.embedJpg(backgroundBytes);
+      // Replicate CSS background-size:cover (scale to fill, center, crop overflow).
+      const scale = Math.max(PAGE_W / image.width, PAGE_H / image.height);
+      const width = image.width * scale;
+      const height = image.height * scale;
+      page.drawImage(image, {
+        x: (PAGE_W - width) / 2,
+        y: (PAGE_H - height) / 2,
+        width,
+        height
+      });
+    } catch {
+      // Sin fondo: el resto del diploma se dibuja igual.
+    }
   }
 
   const helvetica = await doc.embedFont(StandardFonts.Helvetica);
@@ -97,6 +108,44 @@ export async function renderCertificatePdf(
   drawCenteredAtBottom(page, helvetica, winAnsi(meta), 10 * PX_TO_PT, 18 * MM_TO_PT, META_COLOR);
 
   return doc.save();
+}
+
+/**
+ * Reconoce (puro) el formato de imagen por sus bytes iniciales, para elegir
+ * entre embedPng y embedJpg. Cualquier otro formato se trata como JPG y el
+ * try/catch del render lo degrada a "sin fondo".
+ */
+export function detectImageKind(bytes: Uint8Array): "png" | "jpg" {
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return "png";
+  }
+  return "jpg";
+}
+
+/**
+ * Obtiene el fondo definido por la plantilla. Soporta URL http(s) (descarga con
+ * fetch y timeout) y rutas locales (el fondo empaquetado). Fail-soft: cualquier
+ * fallo devuelve null y el render cae al fondo por defecto.
+ */
+async function loadTemplateBackground(url: string): Promise<Uint8Array | null> {
+  try {
+    if (/^https?:\/\//i.test(url)) {
+      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!response.ok) {
+        return null;
+      }
+      return new Uint8Array(await response.arrayBuffer());
+    }
+    return await readFile(url);
+  } catch {
+    return null;
+  }
 }
 
 async function loadBackground(path: string): Promise<Uint8Array | null> {

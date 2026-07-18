@@ -1,11 +1,138 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import type { PrismaClient } from "@prisma/client";
 import {
+  buildCourseUpdateData,
   buildLessonCreateData,
   buildLessonUpdateData,
   checkPrerequisiteAddition,
+  cleanupAssets,
   isUniqueConstraintError
 } from "./courses-admin.js";
+
+// Fake mínimo para cleanupAssets: cursos vivos con su portada, y registro de qué
+// filas y blobs se borran.
+function makeCleanupFakes(courses: Array<{ id: string; thumbnailAssetId: string | null }>) {
+  const deletedAssetIds: string[] = [];
+  const deletedBlobs: string[] = [];
+  const prisma = {
+    course: {
+      findMany: async ({
+        where
+      }: {
+        where: { thumbnailAssetId: { in: string[] }; id?: { not: string } };
+      }) =>
+        courses
+          .filter(
+            (course) =>
+              course.thumbnailAssetId !== null && where.thumbnailAssetId.in.includes(course.thumbnailAssetId)
+          )
+          .filter((course) => (where.id ? course.id !== where.id.not : true))
+          .map((course) => ({ thumbnailAssetId: course.thumbnailAssetId }))
+    },
+    asset: {
+      deleteMany: async ({ where }: { where: { id: { in: string[] } } }) => {
+        deletedAssetIds.push(...where.id.in);
+        return { count: where.id.in.length };
+      }
+    }
+  } as unknown as PrismaClient;
+
+  return {
+    deletedAssetIds,
+    deletedBlobs,
+    deps: {
+      prisma,
+      deleteBlob: async (storageKey: string) => {
+        deletedBlobs.push(storageKey);
+      },
+      logger: { warn: () => {} }
+    }
+  };
+}
+
+describe("cleanupAssets (limpieza de blobs al borrar curso/clase)", () => {
+  it("al borrar una CLASE conserva un material que además es portada de su propio curso vivo", async () => {
+    const { deps, deletedAssetIds, deletedBlobs } = makeCleanupFakes([{ id: "c1", thumbnailAssetId: "a1" }]);
+
+    // deletedCourseId null: nadie se excluye del chequeo, el curso c1 sigue vivo.
+    await cleanupAssets([{ id: "a1", storageKey: "k1" }], null, deps);
+
+    assert.deepEqual(deletedAssetIds, []);
+    assert.deepEqual(deletedBlobs, []);
+  });
+
+  it("al borrar el CURSO ese mismo asset sí se limpia (el curso dueño ya no existe)", async () => {
+    const { deps, deletedAssetIds, deletedBlobs } = makeCleanupFakes([{ id: "c1", thumbnailAssetId: "a1" }]);
+
+    await cleanupAssets([{ id: "a1", storageKey: "k1" }], "c1", deps);
+
+    assert.deepEqual(deletedAssetIds, ["a1"]);
+    assert.deepEqual(deletedBlobs, ["k1"]);
+  });
+
+  it("al borrar una CLASE limpia los materiales que no son portada de nadie", async () => {
+    const { deps, deletedAssetIds, deletedBlobs } = makeCleanupFakes([{ id: "c1", thumbnailAssetId: "otro" }]);
+
+    await cleanupAssets([{ id: "a2", storageKey: "k2" }], null, deps);
+
+    assert.deepEqual(deletedAssetIds, ["a2"]);
+    assert.deepEqual(deletedBlobs, ["k2"]);
+  });
+
+  it("conserva una portada reutilizada por OTRO curso al borrar un curso", async () => {
+    const { deps, deletedAssetIds } = makeCleanupFakes([
+      { id: "c1", thumbnailAssetId: "a1" },
+      { id: "c2", thumbnailAssetId: "a1" }
+    ]);
+
+    await cleanupAssets([{ id: "a1", storageKey: "k1" }], "c1", deps);
+
+    assert.deepEqual(deletedAssetIds, []);
+  });
+});
+
+describe("buildCourseUpdateData (edición de curso)", () => {
+  const draftCourse = { status: "DRAFT", publishedAt: null };
+
+  it("acepta serviceLine al editar (no solo al crear)", () => {
+    const data = buildCourseUpdateData({ serviceLine: "Custodia" }, draftCourse, false);
+    assert.equal(data.serviceLine, "Custodia");
+  });
+
+  it("acepta serviceLine null para limpiar la línea de servicio", () => {
+    const data = buildCourseUpdateData({ serviceLine: null }, draftCourse, false);
+    assert.equal(data.serviceLine, null);
+  });
+
+  it("no toca serviceLine cuando no viene en el cuerpo", () => {
+    const data = buildCourseUpdateData({ title: "Nuevo título" }, draftCourse, false);
+    assert.equal("serviceLine" in data, false);
+    assert.equal(data.title, "Nuevo título");
+  });
+
+  it("corta versión (vN→vN+1) al publicar desde borrador", () => {
+    const data = buildCourseUpdateData({ status: "PUBLISHED" }, draftCourse, false);
+    assert.deepEqual(data.version, { increment: 1 });
+    assert.ok(data.publishedAt instanceof Date);
+  });
+
+  it("no corta versión cuando el curso ya estaba publicado", () => {
+    const data = buildCourseUpdateData(
+      { status: "PUBLISHED" },
+      { status: "PUBLISHED", publishedAt: new Date("2026-01-01T00:00:00Z") },
+      false
+    );
+    assert.equal("version" in data, false);
+  });
+
+  it("solo el admin puede reasignar el docente", () => {
+    const asTeacher = buildCourseUpdateData({ teacherId: "t2" }, draftCourse, false);
+    assert.equal("teacher" in asTeacher, false);
+    const asAdmin = buildCourseUpdateData({ teacherId: "t2" }, draftCourse, true);
+    assert.deepEqual(asAdmin.teacher, { connect: { id: "t2" } });
+  });
+});
 
 describe("buildLessonCreateData (persistencia de campos de lección)", () => {
   it("persiste durationSec y kind cuando llegan en el cuerpo", () => {

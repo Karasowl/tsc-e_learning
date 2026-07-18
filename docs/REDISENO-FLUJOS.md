@@ -286,3 +286,34 @@ Se cerraron los huecos que dejaban a cada rol a medias, sobre el motor real:
 - **build** (web + api + paquetes): verde.
 - **e2e** (Playwright): **29/29** verdes.
 - Sin push ni deploy (VPS compartido con producción).
+
+## 9. Auditoría de completitud y cierre de huecos (2026-07-17, misma rama)
+
+> Auditoría adversarial de 5 agentes (guardia, instructor, admin, backend, transversal) que rastreó cada botón hasta endpoint y persistencia, más 3 unidades de arreglo y revisión independiente. Veredicto de la auditoría: **cero maquetas o simulaciones**, todo persiste; los hallazgos fueron huecos lógicos reales, ya cerrados.
+
+### Bloqueante corregido
+- **Aprobar el examen final nunca transitaba la inscripción a COMPLETED** (el submit del examen no recomputaba la finalización): el diploma era inalcanzable por el flujo normal y el guardia veía para siempre "Aprueba el examen para obtener tu diploma". Ahora `recomputeCourseCompletion` (`apps/api/src/lib/course-progress.ts`, extraída de courses.ts sin duplicación) corre al aprobar, con notificación, insignias y XP. Cubierto por e2e nuevo `guardia-diploma.spec.ts` (aprobar, reclamar diploma, +240 XP).
+
+### Degradantes corregidos
+- Cuenta INVITED ya no puede "activarse" a un estado inutilizable (409 sin credenciales, directo o en dos pasos); el admin ve "Reenviar invitación" en vez de "Reactivar".
+- Curso ARCHIVED visible para su dueño y admin (banner de estado, pestañas funcionales); estudiantes lo siguen sin ver.
+- Exámenes DRAFT ya no son visibles ni presentables por estudiantes; chips Borrador/Publicado en la consola; el reporte solo evalúa contra exámenes publicados; despublicar o borrar el último examen publicado recomputa la finalización de los alumnos al 100%.
+- "Siguiente" del lector respeta lecciones bloqueadas; revocar inscripción pide confirmación; refresh de XP e insignias al aprobar examen sin recargar.
+- Errores alcanzables por usuarios traducidos al español (API) y errores de validación legibles (ya no "HTTP 400"); fetch sueltos enrutados por el manejo central de 401.
+- Instructor ve y asigna la plantilla de certificado de su curso (lista de solo lectura); el diseñador sigue siendo admin.
+- Reglas de correo con editar, activar/desactivar y eliminar; "Procesar pendientes" reporta enviados/fallidos reales.
+- Exports (Excel y PDF) coinciden con lo visible: filtro `q` y estado server-side, summary recalculado sobre filas filtradas.
+- Padrón: filtro de origen estable con sentinela `none` para altas nativas; colaboradores con filtro por estado.
+- Limpieza de huérfanos: blobs y filas de Asset al borrar curso/clase (conservando portadas reutilizadas), avisos in-app al borrar anuncio global; creación de anuncios transaccional.
+- El PDF del diploma respeta el `backgroundUrl` de la plantilla (fail-soft al fondo por defecto). Esto resuelve la decisión pendiente de §8 "Fondo custom de la plantilla".
+- `serviceLine` editable en el editor y expuesto en el detalle del curso.
+- Seed: clase con documento PDF descargable real y anuncio global con aviso in-app del guardia. README con `pnpm db:seed` y credenciales demo; `.env.example` documenta Google login y `JWT_EXPIRES_IN`; scripts de reset con guarda anti-producción probada.
+- E2E sin residuos: email de invitación fijo y limpieza `reset-qa-residues` en el global-setup (purgados 22 usuarios y 7 anuncios QA históricos de la BD local).
+
+### Sin acción (documentado)
+- Enums muertos `AttemptStatus.SUBMITTED`/`VOIDED`; endpoints sin consumidor `GET /quizzes/attempts/:id` y `/inventory/features`; imágenes públicas por assetId (decisión previa); emails `@tsc.local` del seed rebotarían si se enciende SMTP en demo.
+- Carrera teórica de doble notificación de finalización (paridad con el patrón preexistente) y fetch de fondo de plantilla limitado a admins.
+- Decisiones de producto abiertas: correo masivo de anuncios (sigue solo in-app) y gestión admin de diplomas (emitir/revocar quedó fuera de alcance según backlog). Borrar un anuncio de curso conserva sus avisos in-app (asimetría deliberada, revisable).
+
+### Verificación final (2026-07-17)
+- typecheck monorepo: 0 errores. API: **198/198** tests. Build web: verde. Seed idempotente. **e2e: 30/30** (incluye el spec nuevo de diploma). Revisión independiente: APROBADO_CON_OBSERVACIONES, todas las observaciones importantes y menores corregidas y re-verificadas. Sin push ni deploy.

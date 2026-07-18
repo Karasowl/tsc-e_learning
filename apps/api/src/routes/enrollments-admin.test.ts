@@ -1,7 +1,22 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Prisma } from "@prisma/client";
-import { serializeMasterEnrollment } from "./enrollments-admin.js";
+import { resolveSourceSystemFilter, serializeMasterEnrollment } from "./enrollments-admin.js";
+
+describe("resolveSourceSystemFilter (filtro de origen del padrón)", () => {
+  it("mapea el sentinela none a IS NULL (altas nativas de la plataforma)", () => {
+    assert.equal(resolveSourceSystemFilter("none"), null);
+  });
+
+  it("filtra por igualdad con cualquier otro valor", () => {
+    assert.equal(resolveSourceSystemFilter("wordpress"), "wordpress");
+  });
+
+  it("sin valor (o vacío) no aplica filtro", () => {
+    assert.equal(resolveSourceSystemFilter(undefined), undefined);
+    assert.equal(resolveSourceSystemFilter(""), undefined);
+  });
+});
 
 function baseRow(overrides: Partial<Parameters<typeof serializeMasterEnrollment>[0]> = {}) {
   return {

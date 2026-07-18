@@ -1,6 +1,51 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { dedupeEarnedBadges } from "./users-admin.js";
+import { blocksManualActivation, dedupeEarnedBadges } from "./users-admin.js";
+
+describe("blocksManualActivation (sin credencial utilizable no hay paso manual a ACTIVE)", () => {
+  it("bloquea el paso a ACTIVE sin passwordHash ni hash legado (invitado sin activar)", () => {
+    assert.equal(
+      blocksManualActivation({ passwordHash: null, legacyPasswordHash: null, nextStatus: "ACTIVE" }),
+      true
+    );
+  });
+
+  it("cierra el rodeo INVITED→DISABLED→ACTIVE: sigue bloqueado porque decide por credenciales", () => {
+    // El estado actual ya no importa: sin ninguna credencial no se activa a mano.
+    assert.equal(
+      blocksManualActivation({ passwordHash: null, legacyPasswordHash: null, nextStatus: "ACTIVE" }),
+      true
+    );
+  });
+
+  it("permite activar una cuenta que ya tiene contraseña propia", () => {
+    assert.equal(
+      blocksManualActivation({ passwordHash: "$hash", legacyPasswordHash: null, nextStatus: "ACTIVE" }),
+      false
+    );
+  });
+
+  it("permite reactivar una cuenta migrada que solo conserva el hash legado de WordPress", () => {
+    assert.equal(
+      blocksManualActivation({ passwordHash: null, legacyPasswordHash: "$wp$hash", nextStatus: "ACTIVE" }),
+      false
+    );
+  });
+
+  it("no bloquea cuando el cambio no toca el estado", () => {
+    assert.equal(
+      blocksManualActivation({ passwordHash: null, legacyPasswordHash: null, nextStatus: undefined }),
+      false
+    );
+  });
+
+  it("no bloquea suspender (DISABLED) aunque falten credenciales", () => {
+    assert.equal(
+      blocksManualActivation({ passwordHash: null, legacyPasswordHash: null, nextStatus: "DISABLED" }),
+      false
+    );
+  });
+});
 
 describe("dedupeEarnedBadges (expediente de usuario)", () => {
   it("colapsa varios awards del mismo logro conservando la fecha más antigua", () => {

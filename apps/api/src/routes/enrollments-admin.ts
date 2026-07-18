@@ -32,7 +32,7 @@ const bulkUpdateSchema = z
     status: enrollmentStatusSchema.optional()
   })
   .refine((value) => value.expiresAt !== undefined || value.status !== undefined, {
-    message: "Provide expiresAt or status"
+    message: "Indica la fecha de vencimiento o el estado"
   });
 
 const enrollmentParamsSchema = z.object({
@@ -60,7 +60,7 @@ const enrollSchema = z
     email: z.string().email().optional()
   })
   .refine((value) => Boolean(value.userId || value.email), {
-    message: "Provide userId or email"
+    message: "Indica el usuario o el correo"
   });
 
 export async function registerEnrollmentAdminRoutes(server: FastifyInstance) {
@@ -88,8 +88,9 @@ export async function registerEnrollmentAdminRoutes(server: FastifyInstance) {
     if (query.data.userId) {
       where.userId = query.data.userId;
     }
-    if (query.data.sourceSystem) {
-      where.sourceSystem = query.data.sourceSystem;
+    const sourceSystem = resolveSourceSystemFilter(query.data.sourceSystem);
+    if (sourceSystem !== undefined) {
+      where.sourceSystem = sourceSystem;
     }
     if (query.data.q) {
       where.user = {
@@ -295,10 +296,10 @@ export async function registerEnrollmentAdminRoutes(server: FastifyInstance) {
 
     const course = await getPrisma().course.findUnique({ where: { id: params.data.courseId } });
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     const enrollments = await getPrisma().enrollment.findMany({
@@ -334,10 +335,10 @@ export async function registerEnrollmentAdminRoutes(server: FastifyInstance) {
 
     const course = await getPrisma().course.findUnique({ where: { id: params.data.courseId } });
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     const user = body.data.userId
@@ -387,10 +388,10 @@ export async function registerEnrollmentAdminRoutes(server: FastifyInstance) {
 
     const course = await getPrisma().course.findUnique({ where: { id: params.data.courseId } });
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     const enrollment = await getPrisma().enrollment.findUnique({
@@ -398,7 +399,7 @@ export async function registerEnrollmentAdminRoutes(server: FastifyInstance) {
       include: { user: { select: { displayName: true } } }
     });
     if (!enrollment) {
-      return reply.code(404).send({ error: "Enrollment not found" });
+      return reply.code(404).send({ error: "No se encontró la inscripción" });
     }
 
     await getPrisma().enrollment.delete({ where: { id: enrollment.id } });
@@ -419,6 +420,23 @@ export async function registerEnrollmentAdminRoutes(server: FastifyInstance) {
 
 function canEditCourse(auth: AuthContext, course: { teacherId: string | null }) {
   return isAdmin(auth) || (auth.roles.includes("TEACHER") && course.teacherId === auth.userId);
+}
+
+/**
+ * Traduce el query param sourceSystem del padrón al filtro de Prisma. Las altas
+ * nativas de la plataforma guardan sourceSystem null, así que el valor sentinela
+ * `none` mapea a IS NULL (sourceSystem: null); cualquier otro valor filtra por
+ * igualdad y la ausencia (o vacío) no filtra. Pura para poder probarse sin base
+ * de datos.
+ */
+export function resolveSourceSystemFilter(value: string | undefined): string | null | undefined {
+  if (!value) {
+    return undefined;
+  }
+  if (value === "none") {
+    return null;
+  }
+  return value;
 }
 
 export function serializeMasterEnrollment(

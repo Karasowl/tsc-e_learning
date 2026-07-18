@@ -58,6 +58,17 @@ export function buildAnnouncementNotifications(
   return rows;
 }
 
+/**
+ * Criterio (puro) para identificar en la bandeja in-app las notificaciones que
+ * nacieron de un anuncio concreto, y poder borrarlas junto con él.
+ */
+export function announcementNotificationCleanupWhere(announcementId: string): {
+  linkType: string;
+  linkId: string;
+} {
+  return { linkType: "announcement", linkId: announcementId };
+}
+
 export function serializeAnnouncement(announcement: {
   id: string;
   scope: string;
@@ -110,44 +121,50 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
 
     const course = await getPrisma().course.findUnique({ where: { id: params.data.courseId } });
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
-    const announcement = await getPrisma().announcement.create({
-      data: {
-        scope: "COURSE",
-        courseId: course.id,
-        authorId: auth.userId,
-        title: body.data.title,
-        body: body.data.body,
-        publishedAt: new Date()
-      },
-      include: {
-        author: { select: { displayName: true } },
-        course: { select: { id: true, title: true } }
+    // El anuncio y su siembra en la bandeja in-app son atómicos: no puede quedar
+    // un anuncio publicado sin avisos (ni avisos de un anuncio que no se creó).
+    const { announcement, notifications } = await getPrisma().$transaction(async (tx) => {
+      const created = await tx.announcement.create({
+        data: {
+          scope: "COURSE",
+          courseId: course.id,
+          authorId: auth.userId,
+          title: body.data.title,
+          body: body.data.body,
+          publishedAt: new Date()
+        },
+        include: {
+          author: { select: { displayName: true } },
+          course: { select: { id: true, title: true } }
+        }
+      });
+
+      // Bandeja in-app: un aviso por estudiante inscrito vigente. El correo masivo de
+      // anuncios NO se envía aquí.
+      // TODO: correo-masivo de anuncios es decisión de producto pendiente.
+      const recipients = await tx.enrollment.findMany({
+        where: { courseId: course.id, status: { in: ["ACTIVE", "COMPLETED"] } },
+        select: { userId: true }
+      });
+      const rows = buildAnnouncementNotifications({
+        userIds: recipients.map((row) => row.userId),
+        title: created.title,
+        body: created.body,
+        linkType: "course",
+        linkId: course.id
+      });
+      if (rows.length > 0) {
+        await tx.notification.createMany({ data: rows });
       }
-    });
 
-    // Bandeja in-app: un aviso por estudiante inscrito vigente. El correo masivo de
-    // anuncios NO se envía aquí.
-    // TODO: correo-masivo de anuncios es decisión de producto pendiente.
-    const recipients = await getPrisma().enrollment.findMany({
-      where: { courseId: course.id, status: { in: ["ACTIVE", "COMPLETED"] } },
-      select: { userId: true }
+      return { announcement: created, notifications: rows };
     });
-    const notifications = buildAnnouncementNotifications({
-      userIds: recipients.map((row) => row.userId),
-      title: announcement.title,
-      body: announcement.body,
-      linkType: "course",
-      linkId: course.id
-    });
-    if (notifications.length > 0) {
-      await getPrisma().notification.createMany({ data: notifications });
-    }
 
     await logAdminAction({
       actorId: auth.userId,
@@ -182,10 +199,10 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
 
     const course = await getPrisma().course.findUnique({ where: { id: params.data.courseId } });
     if (!course) {
-      return reply.code(404).send({ error: "Course not found" });
+      return reply.code(404).send({ error: "No se encontró el curso" });
     }
     if (!canEditCourse(auth, course)) {
-      return reply.code(403).send({ error: "Course access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este curso" });
     }
 
     const announcements = await getPrisma().announcement.findMany({
@@ -216,36 +233,41 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
       return reply.code(400).send({ error: body.error.flatten() });
     }
 
-    const announcement = await getPrisma().announcement.create({
-      data: {
-        scope: "GLOBAL",
-        courseId: null,
-        authorId: auth.userId,
-        title: body.data.title,
-        body: body.data.body,
-        publishedAt: new Date()
-      },
-      include: {
-        author: { select: { displayName: true } },
-        course: { select: { id: true, title: true } }
-      }
-    });
+    // Atómico igual que el anuncio de curso: anuncio + bandeja o nada.
+    const { announcement, notifications } = await getPrisma().$transaction(async (tx) => {
+      const created = await tx.announcement.create({
+        data: {
+          scope: "GLOBAL",
+          courseId: null,
+          authorId: auth.userId,
+          title: body.data.title,
+          body: body.data.body,
+          publishedAt: new Date()
+        },
+        include: {
+          author: { select: { displayName: true } },
+          course: { select: { id: true, title: true } }
+        }
+      });
 
-    // TODO: correo-masivo de anuncios es decisión de producto pendiente.
-    const students = await getPrisma().user.findMany({
-      where: { roles: { some: { role: "STUDENT" } } },
-      select: { id: true }
+      // TODO: correo-masivo de anuncios es decisión de producto pendiente.
+      const students = await tx.user.findMany({
+        where: { roles: { some: { role: "STUDENT" } } },
+        select: { id: true }
+      });
+      const rows = buildAnnouncementNotifications({
+        userIds: students.map((row) => row.id),
+        title: created.title,
+        body: created.body,
+        linkType: "announcement",
+        linkId: created.id
+      });
+      if (rows.length > 0) {
+        await tx.notification.createMany({ data: rows });
+      }
+
+      return { announcement: created, notifications: rows };
     });
-    const notifications = buildAnnouncementNotifications({
-      userIds: students.map((row) => row.id),
-      title: announcement.title,
-      body: announcement.body,
-      linkType: "announcement",
-      linkId: announcement.id
-    });
-    if (notifications.length > 0) {
-      await getPrisma().notification.createMany({ data: notifications });
-    }
 
     await logAdminAction({
       actorId: auth.userId,
@@ -283,7 +305,7 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
       include: { course: { select: { teacherId: true } } }
     });
     if (!announcement) {
-      return reply.code(404).send({ error: "Announcement not found" });
+      return reply.code(404).send({ error: "No se encontró el anuncio" });
     }
 
     const allowed =
@@ -291,10 +313,16 @@ export async function registerAnnouncementRoutes(server: FastifyInstance) {
         ? isAdmin(auth)
         : canEditCourse(auth, { teacherId: announcement.course?.teacherId ?? null });
     if (!allowed) {
-      return reply.code(403).send({ error: "Announcement access denied" });
+      return reply.code(403).send({ error: "No tienes acceso a este anuncio" });
     }
 
-    await getPrisma().announcement.delete({ where: { id: announcement.id } });
+    // Borra el anuncio junto con los avisos in-app que nacieron de él (los que
+    // enlazan linkType "announcement" + su id). Los avisos de anuncios de curso
+    // enlazan al curso (linkType "course"), así que no hay filas que limpiar ahí.
+    await getPrisma().$transaction([
+      getPrisma().notification.deleteMany({ where: announcementNotificationCleanupWhere(announcement.id) }),
+      getPrisma().announcement.delete({ where: { id: announcement.id } })
+    ]);
     return { deleted: true };
   });
 
