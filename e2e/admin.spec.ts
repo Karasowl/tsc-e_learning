@@ -42,13 +42,31 @@ async function waitForApi(request: APIRequestContext) {
 
 async function loginAdmin(page: Page) {
   await waitForApi(page.request);
-  await page.goto("/");
-  await expect(page.getByRole("button", { name: "Ingresar" })).toBeVisible();
-  await page.getByLabel("Correo").fill(ADMIN);
-  await page.getByLabel("Contraseña").fill(PASSWORD);
-  await page.getByRole("button", { name: "Ingresar" }).click();
-  // El Centro de Operaciones reemplaza al login (NO es el app-shell viejo).
-  await expect(page.locator("main.ops-shell")).toBeVisible({ timeout: 30_000 });
+  // /auth/login limita a 10 logins/min por IP (rate-limit real del producto). En la
+  // corrida completa la ventana puede saturarse y un login recibir 429, que la UI
+  // deja en la pantalla de acceso. Reintentamos con espera corta hasta que se libere
+  // cupo. NO toca el rate-limit del producto; solo hace robusto el e2e en su contra.
+  const MAX_ATTEMPTS = 5;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Ingresar" })).toBeVisible();
+    await page.getByLabel("Correo").fill(ADMIN);
+    await page.getByLabel("Contraseña").fill(PASSWORD);
+    await page.getByRole("button", { name: "Ingresar" }).click();
+    // El Centro de Operaciones reemplaza al login (NO es el app-shell viejo).
+    try {
+      await page
+        .locator("main.ops-shell")
+        .waitFor({ state: "visible", timeout: attempt === MAX_ATTEMPTS ? 30_000 : 8_000 });
+      return;
+    } catch {
+      if (attempt === MAX_ATTEMPTS) {
+        throw new Error("El Centro de Operaciones no cargó tras reintentar el login (¿rate-limit persistente?).");
+      }
+      // Login rechazado (probable 429): espera a que se libere cupo y reintenta.
+      await page.waitForTimeout(12_000);
+    }
+  }
 }
 
 test.describe("admin · centro de operaciones (1280x800)", () => {

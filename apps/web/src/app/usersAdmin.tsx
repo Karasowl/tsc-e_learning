@@ -1,9 +1,27 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Check, Copy, Link2, Mail, RefreshCw, Search, Send, ShieldCheck, UserPlus, X } from "lucide-react";
+import {
+  Award,
+  BadgeCheck,
+  Check,
+  Copy,
+  Eye,
+  Flame,
+  GraduationCap,
+  IdCard,
+  Link2,
+  Mail,
+  RefreshCw,
+  ScrollText,
+  Search,
+  Send,
+  ShieldCheck,
+  UserPlus,
+  X
+} from "lucide-react";
 import { authFetch, errorText } from "./apiClient";
-import { confirmDialog, promptDialog, toast } from "./ui";
+import { confirmDialog, Modal, promptDialog, toast } from "./ui";
 
 type Role = "ADMIN" | "TEACHER" | "STUDENT";
 
@@ -67,6 +85,9 @@ export function UsersRolesAdmin({
   // (dev / SMTP unavailable) so the admin can hand it off manually.
   const [pendingInvite, setPendingInvite] = useState<{ email: string; url: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  // Expediente (ficha 360°) del colaborador seleccionado: perfil + rango + cursos +
+  // diplomas + insignias + auditoría, en un Modal sobre esta misma tabla.
+  const [dossierUserId, setDossierUserId] = useState<string | null>(null);
 
   async function load(overrideTerm?: string) {
     setError(null);
@@ -466,7 +487,14 @@ export function UsersRolesAdmin({
               return (
                 <tr key={user.id}>
                   <td>
-                    <strong>{user.displayName}</strong>
+                    <button
+                      type="button"
+                      className="linklike-name"
+                      onClick={() => setDossierUserId(user.id)}
+                      title="Ver expediente"
+                    >
+                      {user.displayName}
+                    </button>
                     <br />
                     <small className="muted">{user.email}</small>
                     <br />
@@ -501,24 +529,29 @@ export function UsersRolesAdmin({
                     <span className={`status-pill ${statusClass(user.status)}`}>{statusEs(user.status)}</span>
                   </td>
                   <td>
-                    {isSelf ? (
-                      <small className="muted">Tú</small>
-                    ) : (
-                      <div className="row-actions">
-                        {user.status === "ACTIVE" ? (
-                          <button className="secondary-button" disabled={busy} onClick={() => void setStatus(user.id, "DISABLED")} type="button">
-                            Suspender
+                    <div className="row-actions">
+                      <button className="ghost-button" onClick={() => setDossierUserId(user.id)} type="button">
+                        <Eye aria-hidden /> Expediente
+                      </button>
+                      {isSelf ? (
+                        <small className="muted">Tú</small>
+                      ) : (
+                        <>
+                          {user.status === "ACTIVE" ? (
+                            <button className="secondary-button" disabled={busy} onClick={() => void setStatus(user.id, "DISABLED")} type="button">
+                              Suspender
+                            </button>
+                          ) : (
+                            <button className="secondary-button" disabled={busy} onClick={() => void setStatus(user.id, "ACTIVE")} type="button">
+                              Reactivar
+                            </button>
+                          )}
+                          <button className="ghost-button" disabled={busy} onClick={() => void resetPassword(user.id, user.displayName)} type="button">
+                            Contraseña
                           </button>
-                        ) : (
-                          <button className="secondary-button" disabled={busy} onClick={() => void setStatus(user.id, "ACTIVE")} type="button">
-                            Reactivar
-                          </button>
-                        )}
-                        <button className="ghost-button" disabled={busy} onClick={() => void resetPassword(user.id, user.displayName)} type="button">
-                          Contraseña
-                        </button>
-                      </div>
-                    )}
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -533,6 +566,292 @@ export function UsersRolesAdmin({
           </tbody>
         </table>
       </div>
+
+      {dossierUserId ? (
+        <UserDossier token={token} userId={dossierUserId} onClose={() => setDossierUserId(null)} />
+      ) : null}
     </section>
+  );
+}
+
+// ─── Expediente del colaborador: ficha 360° real desde GET /admin/users/:id ─────
+type DossierRank = { level: number; name: string; xp: number; pct: number; toNext: number | null };
+type DossierEnrollment = {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  status: string;
+  progressPercent: number;
+  enrolledAt: string;
+  completedAt: string | null;
+  expiresAt: string | null;
+  expired: boolean;
+};
+type DossierCertificate = { id: string; folio: string; issuedAt: string; courseId: string; courseTitle: string };
+type DossierBadge = { slug: string; title: string; points: number; awardedAt: string };
+type DossierAuditEvent = { id: string; action: string; summary: string; createdAt: string; actor: string | null };
+type Dossier = {
+  user: {
+    id: string;
+    email: string;
+    displayName: string;
+    employeeCode: string | null;
+    serviceLabel: string | null;
+    status: string;
+    roles: Role[];
+    lastLoginAt: string | null;
+    currentStreak: number;
+    createdAt: string;
+  };
+  gamification: { xp: number; rank: DossierRank };
+  enrollments: DossierEnrollment[];
+  certificates: DossierCertificate[];
+  badges: DossierBadge[];
+  auditEvents: DossierAuditEvent[];
+};
+
+const DOSSIER_AUDIT_LABELS: Record<string, string> = {
+  USER_CREATED: "Cuenta creada",
+  USER_INVITED: "Invitación enviada",
+  USER_INVITE_ACTIVATED: "Cuenta activada",
+  USER_STATUS_CHANGED: "Estado de cuenta",
+  USER_ROLE_GRANTED: "Rol asignado",
+  USER_ROLE_REVOKED: "Rol retirado",
+  USER_PASSWORD_RESET: "Contraseña restablecida",
+  ENROLLMENT_GRANTED: "Inscripción",
+  ENROLLMENT_REVOKED: "Acceso revocado",
+  ENROLLMENT_BULK_UPDATED: "Ajuste masivo de inscripciones"
+};
+
+function humanizeAction(value: string) {
+  const text = value.toLowerCase().replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function enrollmentStatusEs(status: string, expired: boolean) {
+  if (expired || status === "EXPIRED") {
+    return "Vencido";
+  }
+  return status === "COMPLETED" ? "Completado" : status === "SUSPENDED" ? "Suspendido" : "Activo";
+}
+
+function enrollmentStatusClass(status: string, expired: boolean) {
+  if (expired || status === "EXPIRED") {
+    return "vencido";
+  }
+  return status === "COMPLETED" ? "completado" : status === "SUSPENDED" ? "disabled" : "activo";
+}
+
+function dossierInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return "?";
+  }
+  if (parts.length === 1) {
+    return parts[0]!.slice(0, 2).toUpperCase();
+  }
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
+
+function UserDossier({ token, userId, onClose }: { token: string; userId: string; onClose: () => void }) {
+  const [data, setData] = useState<Dossier | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setData(null);
+    setError(null);
+    authFetch<Dossier>(token, `/admin/users/${userId}`)
+      .then((result) => {
+        if (active) {
+          setData(result);
+        }
+      })
+      .catch((loadError) => {
+        if (active) {
+          setError(errorText(loadError));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [token, userId]);
+
+  return (
+    <Modal title="Expediente del colaborador" onClose={onClose} size="xl" bodyClassName="dossier-body">
+      {error ? <p className="error-line">{error}</p> : null}
+      {!data && !error ? <p className="empty-state">Cargando expediente…</p> : null}
+      {data ? (
+        <div className="dossier">
+          <header className="dossier-hero">
+            <span className="avatar xl" aria-hidden>
+              {dossierInitials(data.user.displayName)}
+            </span>
+            <div className="dossier-hero-body">
+              <h3>{data.user.displayName}</h3>
+              <p className="muted">{data.user.email}</p>
+              <div className="dossier-hero-tags">
+                <span className={`status-pill ${statusClass(data.user.status)}`}>{statusEs(data.user.status)}</span>
+                {data.user.roles.map((role) => (
+                  <span className={`role-chip ${role.toLowerCase()}`} key={role}>
+                    {roleEs(role)}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="dossier-rank">
+              <span className="dossier-rank-name">
+                <ShieldCheck aria-hidden /> {data.gamification.rank.name}
+              </span>
+              <strong>{data.gamification.xp.toLocaleString("es-MX")} XP</strong>
+              <div className="dossier-rank-bar" aria-hidden>
+                <span style={{ width: `${Math.min(100, Math.max(0, data.gamification.rank.pct))}%` }} />
+              </div>
+              <span className="dossier-streak">
+                <Flame aria-hidden /> Racha de {data.user.currentStreak} día{data.user.currentStreak === 1 ? "" : "s"}
+              </span>
+            </div>
+          </header>
+
+          <dl className="dossier-meta">
+            {data.user.employeeCode ? (
+              <div>
+                <dt>
+                  <IdCard aria-hidden /> Código de colaborador
+                </dt>
+                <dd className="mono">{data.user.employeeCode}</dd>
+              </div>
+            ) : null}
+            {data.user.serviceLabel ? (
+              <div>
+                <dt>Servicio</dt>
+                <dd>{data.user.serviceLabel}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt>Último acceso</dt>
+              <dd>{lastAccessEs(data.user.lastLoginAt).replace("Último acceso: ", "")}</dd>
+            </div>
+            <div>
+              <dt>Alta</dt>
+              <dd>{new Date(data.user.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}</dd>
+            </div>
+          </dl>
+
+          <section className="dossier-section">
+            <div className="dossier-section-head">
+              <GraduationCap aria-hidden />
+              <h4>Cursos e inscripciones</h4>
+              <span className="mono-label">{data.enrollments.length}</span>
+            </div>
+            {data.enrollments.length === 0 ? (
+              <p className="empty-state">Sin inscripciones registradas.</p>
+            ) : (
+              <div className="table-wrap compact">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Curso</th>
+                      <th>Avance</th>
+                      <th>Estado</th>
+                      <th>Vigencia</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.enrollments.map((enrollment) => (
+                      <tr key={enrollment.id}>
+                        <td>{enrollment.courseTitle}</td>
+                        <td>{Math.round(enrollment.progressPercent)}%</td>
+                        <td>
+                          <span className={`status-pill ${enrollmentStatusClass(enrollment.status, enrollment.expired)}`}>
+                            {enrollmentStatusEs(enrollment.status, enrollment.expired)}
+                          </span>
+                        </td>
+                        <td>
+                          {enrollment.expiresAt
+                            ? new Date(enrollment.expiresAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })
+                            : "Sin vencimiento"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="dossier-section">
+            <div className="dossier-section-head">
+              <Award aria-hidden />
+              <h4>Diplomas</h4>
+              <span className="mono-label">{data.certificates.length}</span>
+            </div>
+            {data.certificates.length === 0 ? (
+              <p className="empty-state">Todavía no tiene diplomas emitidos.</p>
+            ) : (
+              <ul className="dossier-cert-list">
+                {data.certificates.map((cert) => (
+                  <li key={cert.id}>
+                    <Award aria-hidden />
+                    <div>
+                      <strong>{cert.courseTitle}</strong>
+                      <span className="mono-label">{cert.folio}</span>
+                    </div>
+                    <time className="mono-label" dateTime={cert.issuedAt}>
+                      {new Date(cert.issuedAt).toLocaleDateString("es-MX")}
+                    </time>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="dossier-section">
+            <div className="dossier-section-head">
+              <BadgeCheck aria-hidden />
+              <h4>Insignias</h4>
+              <span className="mono-label">{data.badges.length}</span>
+            </div>
+            {data.badges.length === 0 ? (
+              <p className="empty-state">Aún no ha ganado insignias.</p>
+            ) : (
+              <div className="dossier-badges">
+                {data.badges.map((badge) => (
+                  <span className="dossier-badge" key={badge.slug} title={`${badge.points} puntos`}>
+                    <BadgeCheck aria-hidden /> {badge.title}
+                  </span>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="dossier-section">
+            <div className="dossier-section-head">
+              <ScrollText aria-hidden />
+              <h4>Auditoría reciente</h4>
+              <span className="mono-label">{data.auditEvents.length}</span>
+            </div>
+            {data.auditEvents.length === 0 ? (
+              <p className="empty-state">Sin eventos de auditoría para este colaborador.</p>
+            ) : (
+              <ol className="dossier-audit">
+                {data.auditEvents.slice(0, 12).map((event) => (
+                  <li key={event.id}>
+                    <div className="dossier-audit-top">
+                      <span className="mono-label">{DOSSIER_AUDIT_LABELS[event.action] ?? humanizeAction(event.action)}</span>
+                      <time className="mono-label" dateTime={event.createdAt}>
+                        {new Date(event.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })}
+                      </time>
+                    </div>
+                    <p>{event.summary}</p>
+                    {event.actor ? <small className="muted">{event.actor}</small> : null}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        </div>
+      ) : null}
+    </Modal>
   );
 }

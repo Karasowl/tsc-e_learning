@@ -24,6 +24,10 @@ const SEED = "seed"; // marcador sourceSystem para filas propias del seed
 // Id fijo de la notificacion demo del guardia (campana). Fijo => upsert idempotente
 // y reseteable a "sin leer" desde reset-guardia-progress.ts.
 const SEED_GUARDIA_NOTIFICATION_ID = "seed-notif-guardia-bienvenida";
+// Id fijo del evento de bitacora demo de gobierno (Centro de Operaciones admin).
+// Fijo => upsert idempotente; su createdAt se refresca a "ahora" en cada corrida
+// para que la bitacora de las ultimas 24 h del tablero siempre lo muestre.
+const SEED_DEMO_AUDIT_ID = "seed-audit-demo-vencido";
 
 // Fechas fijas => folios, codigos de verificacion y timestamps deterministas.
 const ENROLLED_PROTECCION = new Date("2026-04-01T15:00:00.000Z");
@@ -135,6 +139,7 @@ async function upsertCourse(opts: {
   excerpt: string;
   description: string;
   level: string;
+  serviceLine: string;
   durationSec: number;
   teacherId: string;
   publishedAt: Date;
@@ -146,6 +151,7 @@ async function upsertCourse(opts: {
       excerpt: opts.excerpt,
       description: opts.description,
       level: opts.level,
+      serviceLine: opts.serviceLine,
       durationSec: opts.durationSec,
       teacherId: opts.teacherId,
       status: "PUBLISHED",
@@ -157,6 +163,7 @@ async function upsertCourse(opts: {
       excerpt: opts.excerpt,
       description: opts.description,
       level: opts.level,
+      serviceLine: opts.serviceLine,
       durationSec: opts.durationSec,
       teacherId: opts.teacherId,
       status: "PUBLISHED",
@@ -602,6 +609,7 @@ async function seedCourse(opts: {
   excerpt: string;
   description: string;
   level: string;
+  serviceLine: string;
   durationSec: number;
   teacherId: string;
   publishedAt: Date;
@@ -616,6 +624,7 @@ async function seedCourse(opts: {
     excerpt: opts.excerpt,
     description: opts.description,
     level: opts.level,
+    serviceLine: opts.serviceLine,
     durationSec: opts.durationSec,
     teacherId: opts.teacherId,
     publishedAt: opts.publishedAt
@@ -754,6 +763,7 @@ async function main() {
     excerpt: "Formacion para agentes de proteccion de personas de alto perfil.",
     description: "Programa especializado en proteccion ejecutiva: avanzadas de seguridad, formaciones de proteccion, evacuacion y reaccion ante agresiones.",
     level: "Avanzado",
+    serviceLine: "Protección ejecutiva",
     durationSec: 7200,
     teacherId: instructor.id,
     publishedAt: new Date("2026-03-01T12:00:00.000Z"),
@@ -769,6 +779,7 @@ async function main() {
     excerpt: "Traslado seguro y custodia de mercancia en transito.",
     description: "Tecnicas de custodia de mercancia: documentacion legal, gestion de rutas, comunicacion con monitoreo y prevencion de robo en carretera.",
     level: "Intermedio",
+    serviceLine: "Custodia de mercancía",
     durationSec: 5400,
     teacherId: instructor.id,
     publishedAt: new Date("2026-03-10T12:00:00.000Z"),
@@ -784,6 +795,7 @@ async function main() {
     excerpt: "Control de acceso y vigilancia en instalaciones fijas.",
     description: "Operacion de seguridad intramuros: control de acceso, rondines, bitacora de novedades y respuesta ante contingencias.",
     level: "Basico",
+    serviceLine: "Seguridad intramuros",
     durationSec: 3600,
     teacherId: instructor.id,
     publishedAt: new Date("2026-03-20T12:00:00.000Z"),
@@ -905,6 +917,66 @@ async function main() {
       kind: "SYSTEM",
       title: "Bienvenido a tu carrera del guardia",
       body: "Completa tus cursos y aprueba los examenes para ascender de rango. Revisa aqui tus novedades."
+    }
+  });
+
+  // --- Demo de gobierno del Centro de Operaciones (admin) ---
+  // Un colaborador DISTINTO de Marcos con una inscripcion VENCIDA (status ACTIVE
+  // pero expiresAt ya pasado) para que el padron maestro muestre "Vencido", el
+  // cumplimiento sume una sede/linea sin completar y la alerta de gobierno
+  // dispare la advertencia de inscripciones vencidas. No toca a Marcos ni sus
+  // datos (el e2e del guardia sigue verde). Idempotente por email/[userId,courseId].
+  const now = new Date();
+  const demoVencido = await upsertUser({
+    email: "demo.vencido@tsc.local",
+    displayName: "Rosa Delgado",
+    role: "STUDENT",
+    passwordHash,
+    serviceLabel: "Custodia de Mercancía",
+    employeeCode: "TSC-0912"
+  });
+  // expiresAt relativo (20 dias atras) => siempre vencida, sin importar cuando se
+  // siembre. Se inscribe en Custodia de Mercancia (curso publicado).
+  const demoExpiresAt = new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000);
+  await prisma.enrollment.upsert({
+    where: { userId_courseId: { userId: demoVencido.id, courseId: custodia.course.id } },
+    update: {
+      status: "ACTIVE",
+      progressPercent: 40,
+      enrolledAt: new Date("2026-05-01T15:00:00.000Z"),
+      expiresAt: demoExpiresAt
+    },
+    create: {
+      userId: demoVencido.id,
+      courseId: custodia.course.id,
+      status: "ACTIVE",
+      progressPercent: 40,
+      enrolledAt: new Date("2026-05-01T15:00:00.000Z"),
+      expiresAt: demoExpiresAt
+    }
+  });
+
+  // Evento de bitacora demo: da contenido real a la "Bitácora de las últimas 24 h"
+  // del tablero en una base recien sembrada. createdAt = ahora (dentro de 24 h) e
+  // idempotente por id fijo (cada corrida lo refresca a "ahora").
+  await prisma.auditEvent.upsert({
+    where: { id: SEED_DEMO_AUDIT_ID },
+    update: {
+      actorId: admin.id,
+      action: "ENROLLMENT_GRANTED",
+      targetType: "course",
+      targetId: custodia.course.id,
+      summary: "Inscribió a Rosa Delgado en Custodia de Mercancia",
+      createdAt: now
+    },
+    create: {
+      id: SEED_DEMO_AUDIT_ID,
+      actorId: admin.id,
+      action: "ENROLLMENT_GRANTED",
+      targetType: "course",
+      targetId: custodia.course.id,
+      summary: "Inscribió a Rosa Delgado en Custodia de Mercancia",
+      createdAt: now
     }
   });
 

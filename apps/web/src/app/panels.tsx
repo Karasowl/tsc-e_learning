@@ -244,6 +244,7 @@ export function TeachersDirectory({ token }: { token: string }) {
               <GraduationCap aria-hidden />
               <div>
                 <strong>{teacher.displayName}</strong>
+                <small className="muted">{teacher.email}</small>
                 <small>{teacher.courseCount} curso{teacher.courseCount === 1 ? "" : "s"}</small>
               </div>
             </div>

@@ -21,6 +21,7 @@ const createCourseSchema = z.object({
   description: z.string().nullable().optional(),
   excerpt: z.string().nullable().optional(),
   level: z.string().nullable().optional(),
+  serviceLine: z.string().nullable().optional(),
   status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).optional(),
   thumbnailAssetId: z.string().nullable().optional(),
   teacherId: z.string().optional()
@@ -31,6 +32,7 @@ const updateCourseSchema = z.object({
   description: z.string().nullable().optional(),
   excerpt: z.string().nullable().optional(),
   level: z.string().nullable().optional(),
+  serviceLine: z.string().nullable().optional(),
   status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).optional(),
   thumbnailAssetId: z.string().nullable().optional(),
   teacherId: z.string().optional()
@@ -118,6 +120,9 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     if (parsed.data.level !== undefined) {
       data.level = parsed.data.level;
     }
+    if (parsed.data.serviceLine !== undefined) {
+      data.serviceLine = parsed.data.serviceLine;
+    }
     if (parsed.data.thumbnailAssetId !== undefined) {
       data.thumbnailAssetId = parsed.data.thumbnailAssetId;
     }
@@ -171,6 +176,9 @@ export async function registerCourseAdminRoutes(server: FastifyInstance) {
     }
     if (body.data.level !== undefined) {
       data.level = body.data.level;
+    }
+    if (body.data.serviceLine !== undefined) {
+      data.serviceLine = body.data.serviceLine;
     }
     if (body.data.thumbnailAssetId !== undefined) {
       // thumbnailAssetId is now a real FK to Asset: set it through the relation
@@ -933,6 +941,7 @@ function serializeCourse(course: {
   version: number;
   teacherId: string | null;
   level: string | null;
+  serviceLine: string | null;
   durationSec: number | null;
   thumbnailAssetId: string | null;
   publishedAt: Date | null;
@@ -949,6 +958,7 @@ function serializeCourse(course: {
     version: course.version,
     teacherId: course.teacherId,
     level: course.level,
+    serviceLine: course.serviceLine,
     durationSec: course.durationSec,
     thumbnailAssetId: course.thumbnailAssetId,
     publishedAt: course.publishedAt,

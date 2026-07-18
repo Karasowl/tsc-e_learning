@@ -185,6 +185,10 @@ model Course {
   status          CourseStatus   @default(DRAFT)
   version         Int            @default(1)
   teacherId       String?
+  // Línea de servicio a la que pertenece el curso (p. ej. "Protección ejecutiva").
+  // Agrupa el cumplimiento del tablero de gobierno por especialidad. Nullable:
+  // un curso sin clasificar cae en el grupo "Sin línea".
+  serviceLine     String?
   level           String?
   durationSec     Int?
   thumbnailAssetId String?
