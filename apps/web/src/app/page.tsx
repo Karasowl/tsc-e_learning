@@ -1377,7 +1377,10 @@ export default function Home() {
             </div>
           </dl>
         </section>
-        <form className="login-panel" onSubmit={login}>
+        {/* El verificador tiene su propio <form>; no puede vivir DENTRO del form de
+            login (HTML no admite forms anidados: el navegador descarta el interno y
+            "Verificar" dispararía el envío nativo del login, recargando la página). */}
+        <div className="login-panel">
           <div className="panel-heading">
             <ShieldCheck aria-hidden />
             <div>
@@ -1385,29 +1388,31 @@ export default function Home() {
               <h2>Entrar a la plataforma</h2>
             </div>
           </div>
-          <label>
-            Correo
-            <input autoComplete="email" name="email" required type="email" />
-          </label>
-          <label>
-            Contraseña
-            <input autoComplete="current-password" name="password" required type="password" />
-          </label>
-          {error ? <p className="error-line">{error}</p> : null}
-          <button className="primary-button" disabled={busy} type="submit">
-            <UserRound aria-hidden />
-            {busy ? "Validando" : "Ingresar"}
-          </button>
-          {GOOGLE_CLIENT_ID ? (
-            <>
-              <div className="auth-divider">
-                <span>o</span>
-              </div>
-              <GoogleSignIn clientId={GOOGLE_CLIENT_ID} onCredential={loginWithGoogle} />
-            </>
-          ) : null}
+          <form className="login-form" onSubmit={login}>
+            <label>
+              Correo
+              <input autoComplete="email" name="email" required type="email" />
+            </label>
+            <label>
+              Contraseña
+              <input autoComplete="current-password" name="password" required type="password" />
+            </label>
+            {error ? <p className="error-line">{error}</p> : null}
+            <button className="primary-button" disabled={busy} type="submit">
+              <UserRound aria-hidden />
+              {busy ? "Validando" : "Ingresar"}
+            </button>
+            {GOOGLE_CLIENT_ID ? (
+              <>
+                <div className="auth-divider">
+                  <span>o</span>
+                </div>
+                <GoogleSignIn clientId={GOOGLE_CLIENT_ID} onCredential={loginWithGoogle} />
+              </>
+            ) : null}
+          </form>
           <DiplomaVerifier />
-        </form>
+        </div>
       </main>
     );
   }

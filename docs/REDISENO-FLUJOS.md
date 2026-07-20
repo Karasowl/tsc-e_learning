@@ -340,3 +340,40 @@ Ismael decidió y se implementó:
 
 ### Verificación (2026-07-17, esta ronda)
 - typecheck monorepo: 0 errores. API: **215/215** tests (base 198 + 17 nuevos). Build web: verde. Seed idempotente. e2e: suite completa verde (ver reporte de la ronda). Sin push ni deploy.
+
+## 11. QA visual delegado (2026-07-19, misma rama)
+
+Ismael delegó su paso de QA humano; se ejecutó como recorrido en navegador real
+(Playwright con captura por paso, revisadas una a una) sobre las superficies de las
+rondas de los §9 y §10: panorama del guardia (rango/XP/racha, campana sembrada),
+verificador público, regla de correo "Anuncio publicado" con destinatario RH
+(alta, registro del correo al publicar, edición, borrado), simetría del borrado de
+anuncios contra la campana del guardia, y el ciclo completo de diplomas admin
+(modal de candidatos vacío mientras el diploma sigue vigente, revocación con
+confirmación y pill, verificación pública "revocado", reemisión desde candidatos
+con código nuevo válido, y expediente con ambos eventos de bitácora). Evidencia:
+`tmp-qa/qa-2026-07-19/` (18 capturas + el guion usado, fuera de git).
+
+**Hallazgo y corrección — verificador público roto en el navegador.** El `<form>`
+del verificador vivía DENTRO del `<form>` de login (`page.tsx`); HTML no admite
+forms anidados, el navegador descartaba el interno y "Verificar" disparaba el envío
+nativo del login: la página se recargaba y el código jamás se consultaba. Los 200+
+tests del API no podían verlo (el endpoint siempre funcionó); solo se manifestaba
+en el DOM, exactamente el hueco que el QA visual existe para atrapar. Corrección:
+el panel de acceso pasó a `div.login-panel` con un `form.login-form` interno solo
+para las credenciales y el verificador como hermano (layout intacto). Cobertura
+permanente nueva: `e2e/verificador.spec.ts` (código válido => auténtico sin
+recarga; código inexistente => rechazo claro).
+
+Notas de la corrida: la reemisión del diploma SEMBRADO otorga +240 XP porque el
+seed no crea el evento de ledger `CERT:<courseId>` (artefacto de datos demo, no un
+hueco: en el flujo real el evento existe y la reemisión es idempotente); el folio
+deriva de la fecha en UTC, así que una emisión después de ~18:00 hora local recibe
+folio del día siguiente (cosmético). El entorno local se reconstruyó en esta
+sesión (la máquina ya no tenía Postgres ni Docker): cluster portable en
+`~/.local/share/tsc-capacita-pg` y el script documentado
+`~/.local/share/tsc-capacita-localpg-start.sh` recreado.
+
+**Verificación final:** typecheck web 0 errores; e2e **31/31** (30 previos + el
+spec nuevo del verificador) contra seed restaurado a línea base. Sin push ni
+deploy.

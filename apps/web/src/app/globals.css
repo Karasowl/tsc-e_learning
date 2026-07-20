@@ -392,6 +392,13 @@ button:disabled {
   padding: 24px;
 }
 
+/* El form de login quedó como hijo del panel (el verificador vive fuera de él);
+   replica el ritmo vertical del panel para que el layout no cambie. */
+.login-form {
+  display: grid;
+  gap: 18px;
+}
+
 .panel-heading,
 .section-header,
 .course-title-row,
